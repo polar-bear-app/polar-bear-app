@@ -12,36 +12,58 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.wayland_backend.NativeLib
 import io.waylander.ui.theme.WaylanderTheme
+import io.waylander.utils.extractTarAsset
+import java.io.File
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
+    private val progress = mutableStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         setContent {
             WaylanderTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
                         WaylandDisplay()
-                        Overlay()
+                        Overlay(progress)
                     }
                 }
             }
+        }
+
+        // Check if destination directory exists
+        val archFs = File(this.filesDir, "arch");
+        if (archFs.exists() && archFs.listFiles().isNotEmpty()) {
+            progress.value = -1
+        } else {
+            // The file was renamed after packaging into APK
+            Thread {
+                extractTarAsset(this, "ArchLinuxARM-aarch64-latest.tar", archFs, onProgress = {
+                    progress.value = it.toInt()
+                })
+            }.start()
         }
     }
 }
 
 @Composable
-fun Overlay() {
+fun Overlay(progress: MutableState<Int>) {
     Box(modifier = Modifier.fillMaxSize()) {
-        Text(text = NativeLib().stringFromJNI(), color = Color.White, modifier = Modifier.align(Alignment.Center))
+        Text(text = if (progress.value < 0) NativeLib().stringFromJNI() else "Extraction Progress: ${progress.value}%", color = Color.White, modifier = Modifier.align(Alignment.Center))
     }
 }
+
 
 @Composable
 fun WaylandDisplay() {

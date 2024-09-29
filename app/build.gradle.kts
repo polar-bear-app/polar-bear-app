@@ -9,14 +9,18 @@ android {
 
     defaultConfig {
         applicationId = "io.waylander"
-        minSdk = 24
-        targetSdk = 34
+        minSdk = 26
+        targetSdk = 33
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+
+        ndk {
+            abiFilters.add("arm64-v8a")
         }
     }
 

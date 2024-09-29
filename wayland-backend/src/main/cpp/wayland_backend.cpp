@@ -8,8 +8,6 @@ Java_com_example_wayland_1backend_NativeLib_executeCommand(
         jobject /* this */,
         jstring jcommand) {
 
-    system("chmod -R +x /data/data/io.waylander/files/arch/");
-
     const char* command = env->GetStringUTFChars(jcommand, 0);
     char buffer[1024];
     std::string result = "";

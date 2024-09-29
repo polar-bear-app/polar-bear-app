@@ -1,4 +1,4 @@
-package io.waylander
+package app.polarbear
 
 import org.junit.Test
 

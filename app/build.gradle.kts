@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "io.waylander"
+    namespace = "app.polarbear"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.waylander"
+        applicationId = "app.polarbear"
         minSdk = 26
         targetSdk = 33
         versionCode = 1
@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(project(":wayland-backend"))
+    implementation(libs.androidx.appcompat)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

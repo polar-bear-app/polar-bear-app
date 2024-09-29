@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Waylander"
+rootProject.name = "PolarBear"
 include(":app")
 include(":wayland-backend")

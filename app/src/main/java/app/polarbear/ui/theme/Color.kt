@@ -1,4 +1,4 @@
-package io.waylander.ui.theme
+package app.polarbear.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

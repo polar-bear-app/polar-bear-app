@@ -63,28 +63,29 @@ class MainActivity : ComponentActivity() {
 
     private fun proot() {
         val appInfo = this.applicationInfo
-//        val command = "export PROOT_LOADER=" + appInfo.nativeLibraryDir + "/loader.so PROOT_TMP_DIR=" + appInfo.dataDir + "/files/arch/var/cache && printf '%s\\n' 'pacman --help' | " + appInfo.nativeLibraryDir + "/proot.so -r " + appInfo.dataDir + "/files/arch -0 -w / -b /dev -b /proc -b /sys --link2symlink 2>&1"
-//        stdout.value += NativeLib().executeCommand(command)
         process(
             listOf(
                 appInfo.nativeLibraryDir + "/proot.so",
-                "-r", appInfo.dataDir + "/files/arch",
+                "-r", appInfo.dataDir + "/files/archlinux-aarch64",
                 "-0",
                 "-w", "/",
                 "-b", "/dev",
                 "-b", "/proc",
                 "-b", "/sys",
-                "--link2symlink"
+                "-b", "/proc/net:/proc/net",
+                "-b", "/sys/class/net:/sys/class/net",
+                "-b", "/dev/net:/dev/net",
+                "--link2symlink",
+                "--kill-on-exit"
             ), environment = mapOf(
                 "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
-                "PROOT_TMP_DIR" to appInfo.dataDir + "/files/arch",
+                "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
             ), output = {
                 stdout.value += "${it}\n"
             }, input = {
                 this.stdin = it.writer()
                 this.stdin?.appendLine("uname -a")
-                this.stdin?.flush()
-                this.stdin?.appendLine("pacman --help")
+                stdin?.appendLine("echo '# '")
                 this.stdin?.flush()
             }
         )
@@ -125,6 +126,7 @@ class MainActivity : ComponentActivity() {
                                 openAlertDialog.value = false
                                 // Handle the user input here
                                 stdin?.appendLine(userInput.value)
+                                stdin?.appendLine("echo '# '")
                                 stdin?.flush()
                                 userInput.value = ""
                             }

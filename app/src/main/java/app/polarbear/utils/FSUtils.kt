@@ -2,7 +2,9 @@ package app.polarbear.utils
 
 import android.content.Context
 import androidx.compose.runtime.MutableState
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
+import kotlin.concurrent.thread
 
 fun checkAndPacstrap(
     context: Context,
@@ -11,13 +13,13 @@ fun checkAndPacstrap(
 ) {
     try {
         // The file was renamed after packaging into APK
-        val assetName = "ArchLinuxARM-aarch64-latest.bin"
+        val assetName = "archlinux-aarch64-pd-v4.6.0.tar.xz"
         val tempTarFile =
-            File(context.cacheDir, assetName)  // Temporary file to store the extracted tar
-        val destinationFolder = File(context.filesDir, "arch");
+            File(context.cacheDir, "arch.tar")  // Temporary file to store the extracted tar
+        val destinationFolder = File(context.filesDir, "archlinux-aarch64");
         // Pacstrap when there is no fs or the temp file is still there (the extraction progress wasn't finished)
         var shouldPacstrap = false
-        if (!destinationFolder.exists()) {
+        if (!destinationFolder.exists() || destinationFolder.listFiles().isNullOrEmpty()) {
             shouldPacstrap = true
             stdout.value = "Arch Linux is not installed! Installing...\n"
         } else if (tempTarFile.exists()) {
@@ -25,33 +27,42 @@ fun checkAndPacstrap(
             stdout.value = "Previous installation failed. Retrying...\n"
         }
         if (shouldPacstrap) {
-            stdout.value += "(This may take a few minutes.)\n"
+            thread {
+                stdout.value += "(This may take a few minutes.)\n"
 
-            destinationFolder.deleteRecursively()
-            destinationFolder.mkdirs()
+                destinationFolder.deleteRecursively()
 
-            // Copy the asset to the cache directory to use with tar
-            context.assets.open(assetName).use { inputStream ->
-                tempTarFile.outputStream().use { outputStream ->
-                    inputStream.copyTo(outputStream)
+                if (!tempTarFile.exists()) {
+                    // Copy the asset to the cache directory to use with tar
+                    context.assets.open(assetName).use { inputStream ->
+                        XZCompressorInputStream(inputStream).use { xzIn ->
+                            tempTarFile.outputStream().use { outputStream ->
+                                xzIn.copyTo(outputStream)
+                            }
+                        }
+                    }
                 }
+
+                // Prepare the command for executing tar.so (not built-in tar since it doesn't support xattrs)
+                val command = listOf(
+                    context.applicationInfo.nativeLibraryDir + "/tar.so", // Path to the tar executable
+                    "-xp", // Options should be separate
+                    "--acls",
+                    "--xattrs",
+                    "--xattrs-include=*",
+                    "-f",
+                    tempTarFile.absolutePath,  // Path to the tar.gz file
+                    "-C",
+                    destinationFolder.parentFile!!.absolutePath  // Specify the destination directory
+                )
+
+                process(command, output = {
+                    stdout.value += "${it}\n"
+                }, onFinished = {
+                    tempTarFile.delete()
+                    onFinished(it)
+                })
             }
-
-            // Prepare the command for executing tar.so (not built-in tar since it doesn't support xattrs)
-            val command = listOf(
-                context.applicationInfo.nativeLibraryDir + "/tar.so", // Path to the tar executable
-                "-zxp", // Options should be separate
-                "--acls",
-                "--xattrs",
-                "--xattrs-include=*",
-                "-f", tempTarFile.absolutePath,  // Path to the tar.gz file
-                "-C", destinationFolder.absolutePath  // Specify the destination directory
-            )
-
-            process(command, cwd = destinationFolder, onFinished = {
-                tempTarFile.delete()
-                onFinished(it)
-            })
         } else {
             onFinished(0)
         }

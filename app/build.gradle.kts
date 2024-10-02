@@ -54,6 +54,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.xz)
     implementation(libs.commons.compress)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

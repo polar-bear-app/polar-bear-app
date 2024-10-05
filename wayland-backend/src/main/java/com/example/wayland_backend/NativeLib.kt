@@ -6,7 +6,7 @@ class NativeLib {
      * A native method that is implemented by the 'wayland_backend' native library,
      * which is packaged with this application.
      */
-    external fun executeCommand(command: String): String
+    external fun start(): String
 
     companion object {
         // Used to load the 'wayland_backend' library on application startup.

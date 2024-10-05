@@ -63,20 +63,38 @@ class MainActivity : ComponentActivity() {
 
     private fun proot() {
         val appInfo = this.applicationInfo
+        val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
         process(
             listOf(
                 appInfo.nativeLibraryDir + "/proot.so",
-                "-r", appInfo.dataDir + "/files/archlinux-aarch64",
-                "-0",
-                "-w", "/",
-                "-b", "/dev",
-                "-b", "/proc",
-                "-b", "/sys",
-                "-b", "/proc/net:/proc/net",
-                "-b", "/sys/class/net:/sys/class/net",
-                "-b", "/dev/net:/dev/net",
+                "-r", rootFs,
+                "-L",
                 "--link2symlink",
-                "--kill-on-exit"
+                "--kill-on-exit",
+                "--root-id",
+                "--cwd=/root",
+                "--bind=/dev",
+//                "--bind=\"/dev/urandom:/dev/random\"",
+                "--bind=/proc",
+//                "--bind=\"/proc/self/fd:/dev/fd\"",
+//                "--bind=\"/proc/self/fd/0:/dev/stdin\"",
+//                "--bind=\"/proc/self/fd/1:/dev/stdout\"",
+//                "--bind=\"/proc/self/fd/2:/dev/stderr\"",
+                "--bind=/sys",
+//                "--bind=\"${rootFs}/proc/.loadavg:/proc/loadavg\"",
+//                "--bind=\"${rootFs}/proc/.stat:/proc/stat\"",
+//                "--bind=\"${rootFs}/proc/.uptime:/proc/uptime\"",
+//                "--bind=\"${rootFs}/proc/.version:/proc/version\"",
+//                "--bind=\"${rootFs}/proc/.vmstat:/proc/vmstat\"",
+//                "--bind=\"${rootFs}/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap\"",
+//                "--bind=\"${rootFs}/sys/.empty:/sys/fs/selinux\"",
+                "/usr/bin/env", "-i",
+                "\"HOME=/root\"",
+                "\"LANG=C.UTF-8\"",
+                "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+                "\"TERM=\${TERM-xterm-256color}\"",
+                "\"TMPDIR=/tmp\"",
+                "/bin/sh"
             ), environment = mapOf(
                 "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
                 "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",

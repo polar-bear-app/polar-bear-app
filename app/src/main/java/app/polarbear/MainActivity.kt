@@ -37,6 +37,7 @@ import app.polarbear.utils.process
 import com.example.wayland_backend.NativeLib
 import java.io.File
 import java.io.OutputStreamWriter
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     private val stdout = mutableStateOf("")
@@ -109,7 +110,9 @@ class MainActivity : ComponentActivity() {
             }
         )
 
-        NativeLib().start();
+        thread {
+            NativeLib().start();
+        }
     }
 
     @Composable

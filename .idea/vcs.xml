@@ -2,5 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/wayland-backend/src/main/cpp/libffi" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/wayland-backend/src/main/cpp/wayland" vcs="Git" />
   </component>
 </project>

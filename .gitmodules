@@ -1,0 +1,6 @@
+[submodule "wayland-backend/src/main/cpp/wayland"]
+	path = wayland-backend/src/main/cpp/wayland
+	url = https://gitlab.freedesktop.org/wayland/wayland.git
+[submodule "wayland-backend/src/main/cpp/libffi"]
+	path = wayland-backend/src/main/cpp/libffi
+	url = https://github.com/libffi/libffi.git

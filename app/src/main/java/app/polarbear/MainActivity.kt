@@ -34,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import app.polarbear.ui.theme.PolarBearTheme
 import app.polarbear.utils.checkAndPacstrap
 import app.polarbear.utils.process
+import com.example.wayland_backend.NativeLib
 import java.io.File
 import java.io.OutputStreamWriter
 
@@ -107,6 +108,8 @@ class MainActivity : ComponentActivity() {
                 this.stdin?.flush()
             }
         )
+
+        NativeLib().start();
     }
 
     @Composable

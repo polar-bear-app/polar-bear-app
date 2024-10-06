@@ -1,0 +1,17 @@
+[binaries]
+c = '/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang'
+cpp = '/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++'
+ar = '/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
+strip = '/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+
+[properties]
+needs_exe_wrapper = true
+sys_root = '/android-ndk-r27b/local'
+pkg_config_libdir = '/android-ndk-r27b/local/lib/pkgconfig'

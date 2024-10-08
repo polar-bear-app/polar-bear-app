@@ -1,13 +1,33 @@
-# Notes
+# Polar Bear
 
-## Why the setup file is .bin and not .tar.gz?
+Polar Bear helps you run a desktop Linux environment on your Android device.
 
-Although the format of the file is a tar.gz, using the gz extension make Android Studio extract the file as tar. If context.assets.open is used, the input stream would be the tar file, which increases the size.
+**Note**: It is expected that you already have a usable desktop experience, i.e., a large enough display (tablet or DEX), a physical keyboard, and optionally a mouse/trackpad. **Polar Bear aims to bridge the gap between the two platforms, not trying to "simulate" the desktop experience by introducing inconvenient interactions**.
 
-## What is proot_standalone_api28.so?
+## How it works
 
-Normally, proot will extract a loader to a temporary directory and then execute the binary. However, this is not possible for Android > 28 due to the X^W security restrictions.
+1. An Arch Linux ARM64 filesystem is set up inside the app's internal storage.
+2. Proot is used to mount the filesystem and "chroot" into it.
+3. A built-in Wayland backend is started inside Android via NDK.
+4. Weston is started inside Linux and renders to the Wayland backend as a nested Wayland compositor.
 
-In order to support latest Android target, the loader is "unbundled", so you will see a proot.so and loader.so file in the jniLibs folder to maintain executability. proot.so will load loader.so via environment variable PROOT_LOADER. The 2 files is downloaded via https://github.com/green-green-avk/build-proot-android/tree/master/packages.
+## Features
 
-API <= 28 is recommended to use the proot_standalone_api28.so file nevertheless, since the file is built with a newer version of proot from termux/proot.
+- Standalone: Polar Bear is not a set of instructions on how to setup a Linux environment using Termux. It is a standalone app that provides a streamlined Linux experience on Android.
+
+- Rootless: Polar Bear does not require root access to run.
+
+- FOSS: Polar Bear is free and open-source. A paid version exists to fund development and maintenance. There is no runtime difference between the free and paid versions.
+
+## Requirements
+
+- Android 8.0 (Oreo) or higher (minSdk 26).
+- ARM64 architecture (unless you're using an emulator, you're probably fine).
+
+## License
+
+Polar Bear is open-source and available under the GNU General Public License v3.0. See [LICENSE](LICENSE) for more information.
+
+---
+
+Have you ever spotted a penguin in the Arctic? It’s about as surprising as running a Linux application on Android!

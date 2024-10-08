@@ -1,5 +1,7 @@
 package com.example.wayland_backend
 
+import android.view.Surface
+
 class NativeLib {
 
     companion object {
@@ -13,5 +15,5 @@ class NativeLib {
      * A native method that is implemented by the 'wayland_backend' native library,
      * which is packaged with this application.
      */
-    external fun start(): String
+    external fun start(surface: Surface): String
 }

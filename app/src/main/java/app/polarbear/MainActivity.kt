@@ -109,10 +109,6 @@ class MainActivity : ComponentActivity() {
                 this.stdin?.flush()
             }
         )
-
-        thread {
-            NativeLib().start();
-        }
     }
 
     @Composable
@@ -200,6 +196,10 @@ fun WaylandDisplay() {
             SurfaceView(context).apply {
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
+
+                        thread {
+                            NativeLib().start(holder.surface);
+                        }
                         // Surface is ready for drawing, access the Surface via holder.surface
                     }
 

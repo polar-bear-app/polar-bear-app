@@ -51,38 +51,37 @@ class MainActivity : ComponentActivity() {
             PolarBearTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
-                        WaylandDisplay()
+                        WaylandDisplay {
+                            proot(it)
+                        }
                         Overlay()
                     }
                 }
             }
         }
-
-        checkAndPacstrap(this, stdout) {
-            proot()
-        }
     }
 
-    private fun proot() {
-        val appInfo = this.applicationInfo
-        val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
-        process(
-            listOf(
-                appInfo.nativeLibraryDir + "/proot.so",
-                "-r", rootFs,
-                "-L",
-                "--link2symlink",
-                "--kill-on-exit",
-                "--root-id",
-                "--cwd=/root",
-                "--bind=/dev",
+    private fun proot(command: String) {
+        checkAndPacstrap(this, stdout) {
+            val appInfo = this.applicationInfo
+            val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
+            process(
+                listOf(
+                    appInfo.nativeLibraryDir + "/proot.so",
+                    "-r", rootFs,
+                    "-L",
+                    "--link2symlink",
+                    "--kill-on-exit",
+                    "--root-id",
+                    "--cwd=/root",
+                    "--bind=/dev",
 //                "--bind=\"/dev/urandom:/dev/random\"",
-                "--bind=/proc",
+                    "--bind=/proc",
 //                "--bind=\"/proc/self/fd:/dev/fd\"",
 //                "--bind=\"/proc/self/fd/0:/dev/stdin\"",
 //                "--bind=\"/proc/self/fd/1:/dev/stdout\"",
 //                "--bind=\"/proc/self/fd/2:/dev/stderr\"",
-                "--bind=/sys",
+                    "--bind=/sys",
 //                "--bind=\"${rootFs}/proc/.loadavg:/proc/loadavg\"",
 //                "--bind=\"${rootFs}/proc/.stat:/proc/stat\"",
 //                "--bind=\"${rootFs}/proc/.uptime:/proc/uptime\"",
@@ -90,25 +89,25 @@ class MainActivity : ComponentActivity() {
 //                "--bind=\"${rootFs}/proc/.vmstat:/proc/vmstat\"",
 //                "--bind=\"${rootFs}/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap\"",
 //                "--bind=\"${rootFs}/sys/.empty:/sys/fs/selinux\"",
-                "/usr/bin/env", "-i",
-                "\"HOME=/root\"",
-                "\"LANG=C.UTF-8\"",
-                "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
-                "\"TERM=\${TERM-xterm-256color}\"",
-                "\"TMPDIR=/tmp\"",
-                "/bin/sh"
-            ), environment = mapOf(
-                "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
-                "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
-            ), output = {
-                stdout.value += "${it}\n"
-            }, input = {
-                this.stdin = it.writer()
-                this.stdin?.appendLine("uname -a")
-                stdin?.appendLine("echo '# '")
-                this.stdin?.flush()
-            }
-        )
+                    "/usr/bin/env", "-i",
+                    "\"HOME=/root\"",
+                    "\"LANG=C.UTF-8\"",
+                    "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+                    "\"TERM=\${TERM-xterm-256color}\"",
+                    "\"TMPDIR=/tmp\"",
+                    "/bin/sh"
+                ), environment = mapOf(
+                    "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
+                    "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
+                ), output = {
+                    stdout.value += "${it}\n"
+                }, input = {
+                    this.stdin = it.writer()
+                    this.stdin?.appendLine(command)
+                    this.stdin?.flush()
+                }
+            )
+        }
     }
 
     @Composable
@@ -190,17 +189,16 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun WaylandDisplay() {
+fun WaylandDisplay(render: (String) -> Unit) {
+
     AndroidView(
         factory = { context ->
             SurfaceView(context).apply {
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
-
-                        thread {
-                            NativeLib().start(holder.surface);
-                        }
                         // Surface is ready for drawing, access the Surface via holder.surface
+                        val display = NativeLib().start(holder.surface);
+                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display weston")
                     }
 
                     override fun surfaceChanged(

@@ -26,7 +26,8 @@ project("wayland_backend")
 # used in the AndroidManifest.xml file.
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
-        wayland_backend.cpp)
+        wayland_backend.cpp
+        compositor.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/wayland/build/src
         ${CMAKE_SOURCE_DIR}/wayland/src)

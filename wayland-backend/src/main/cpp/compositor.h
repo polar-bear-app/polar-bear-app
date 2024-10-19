@@ -12,6 +12,6 @@ struct polar_bear_compositor {
     struct wl_shm_buffer *wl_shm_buffer;
 };
 
-polar_bear_compositor *setup_wayland_backend(const char *socket_name);
+void *setup_wayland_backend(const char *socket_name);
 
 void run_display();

@@ -43,9 +43,9 @@ Java_com_example_wayland_1backend_NativeLib_start(
         jobject /* this */,
         jobject surface) {
     auto socket_name = "wayland-0";
-    auto compositor = setup_wayland_backend(socket_name);
+//    auto compositor = setup_wayland_backend(socket_name);
 
-    render_buffer(env, surface, compositor->wl_shm_buffer);
+//    render_buffer(env, surface, compositor->wl_shm_buffer);
 
     std::thread wayland_backend_thread(run_display);
     wayland_backend_thread.detach();

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.wayland_backend"
+    namespace = "app.polarbear.compositor"
     compileSdk = 34
 
     defaultConfig {

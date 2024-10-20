@@ -19,9 +19,9 @@ COMMAND="mkdir \"\$ANDROID_NDK_HOME/local\" \
 
 # Step 2: Run the Docker container, mount the volume, and execute commands
 docker run -it --rm \
-    -v /Users/teddy/Desktop/github/polar-bear-app/wayland-backend/src/main/cpp/wayland:/wayland \
-    -v /Users/teddy/Desktop/github/polar-bear-app/wayland-backend/src/main/cpp/wayland-crossfile.txt:/wayland-crossfile.txt \
-    -v /Users/teddy/Desktop/github/polar-bear-app/wayland-backend/src/main/cpp/libffi:/libffi \
+    -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/wayland:/wayland \
+    -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/wayland-crossfile.txt:/wayland-crossfile.txt \
+    -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/libffi:/libffi \
     wayland-builder \
     /bin/bash -c "$COMMAND"
 

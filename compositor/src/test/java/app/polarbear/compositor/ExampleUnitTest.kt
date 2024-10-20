@@ -1,4 +1,4 @@
-package com.example.wayland_backend
+package app.polarbear.compositor
 
 import org.junit.Test
 

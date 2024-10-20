@@ -34,7 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import app.polarbear.ui.theme.PolarBearTheme
 import app.polarbear.utils.checkAndPacstrap
 import app.polarbear.utils.process
-import com.example.wayland_backend.NativeLib
+import app.polarbear.compositor.NativeLib
 import java.io.File
 import java.io.OutputStreamWriter
 import kotlin.concurrent.thread

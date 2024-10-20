@@ -3,9 +3,12 @@
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
-#include "compositor.h"
 
-#define LOG_TAG "WaylandBackend"
+#include "wayland/src/wayland-server.h"
+#include "implementations.h"
+#include "utils.h"
+
+#define LOG_TAG "PolarBearCompositor"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 void render_buffer(JNIEnv *env, jobject surface, struct wl_shm_buffer *shmBuffer) {
@@ -31,23 +34,52 @@ void render_buffer(JNIEnv *env, jobject surface, struct wl_shm_buffer *shmBuffer
         ANativeWindow_unlockAndPost(nativeWindow);
     }
 
-
     // Release the native window when done
     ANativeWindow_release(nativeWindow);
 }
 
+wl_display *setup_compositor(const char *socket_name) {
+    redirect_stds();
+
+    struct wl_display *wl_display = wl_display_create();
+    if (!wl_display) {
+        LOGI("Unable to create Wayland display.");
+        return nullptr;
+    }
+    auto socket_path =
+            std::string("/data/data/app.polarbear/files/archlinux-aarch64/tmp/") + socket_name;
+    int sock_fd = create_unix_socket(socket_path);
+    if (sock_fd < 0) {
+        LOGI("Failed to create Unix socket.");
+        return nullptr;
+    }
+
+    if (wl_display_add_socket_fd(wl_display, sock_fd) < 0) {
+        LOGI("Unable to add socket to Wayland display.");
+        close_unix_socket(sock_fd);
+        return nullptr;
+    }
+
+    implement(wl_display);
+
+    return wl_display;
+}
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_wayland_1backend_NativeLib_start(
+Java_app_polarbear_compositor_NativeLib_start(
         JNIEnv *env,
         jobject /* this */,
         jobject surface) {
     auto socket_name = "wayland-0";
-    auto compositor = setup_wayland_backend(socket_name);
+    auto display = setup_compositor(socket_name);
 
-    render_buffer(env, surface, compositor->wl_shm_buffer);
+    //    render_buffer(env, surface, compositor->shm_buffer);
 
-    std::thread wayland_backend_thread(run_display);
-    wayland_backend_thread.detach();
+    std::thread compositor_thread([display]() {
+        LOGI("Running Wayland display...");
+        wl_display_run(display);
+        wl_display_destroy(display);
+    });
+    compositor_thread.detach();
     return env->NewStringUTF(socket_name);
 }

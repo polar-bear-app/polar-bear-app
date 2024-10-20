@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.22.1)
 # Since this is the top level CMakeLists.txt, the project name is also accessible
 # with ${CMAKE_PROJECT_NAME} (both CMake variables are in-sync within the top level
 # build script scope).
-project("wayland_backend")
+project("compositor")
 
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
@@ -26,8 +26,9 @@ project("wayland_backend")
 # used in the AndroidManifest.xml file.
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
-        wayland_backend.cpp
-        compositor.cpp)
+        compositor.cpp
+        implementations.cpp
+        utils.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/wayland/build/src
         ${CMAKE_SOURCE_DIR}/wayland/src)

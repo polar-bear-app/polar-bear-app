@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PolarBear"
 include(":app")
-include(":wayland-backend")
+include(":compositor")

@@ -26,6 +26,7 @@ project("compositor")
 # used in the AndroidManifest.xml file.
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
+        ${CMAKE_SOURCE_DIR}/wayland/build/src/xdg-shell.c
         compositor.cpp
         implementations.cpp
         utils.cpp)

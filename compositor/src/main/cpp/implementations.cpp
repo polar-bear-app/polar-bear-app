@@ -7,7 +7,8 @@
 #include <sys/socket.h>
 #include <assert.h>
 
-#include "wayland/src/wayland-server.h"
+#include "wayland-server.h"
+#include "xdg-shell.h"
 
 #define LOG_TAG "PolarBearCompositorImplementations"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -163,100 +164,44 @@ compositor_create_region(struct wl_client *client,
 
 static const struct wl_compositor_interface compositor_impl = {
         compositor_create_surface,
-        compositor_create_region};
-
-static struct wlr_shm_mapping *mapping_create(int fd, size_t size) {
-//    void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-//    if (data == MAP_FAILED)
-//    {
-//        wlr_log_errno(WLR_DEBUG, "mmap failed");
-//        return NULL;
-//    }
-//
-//    struct wlr_shm_mapping *mapping = calloc(1, sizeof(*mapping));
-//    if (mapping == NULL)
-//    {
-//        munmap(data, size);
-//        return NULL;
-//    }
-//
-//    mapping->data = data;
-//    mapping->size = size;
-//    return mapping;
-}
-
-static struct wlr_shm *shm_from_resource(struct wl_resource *resource);
-
-static const struct wl_shm_interface shm_impl = {
-        .create_pool = [](struct wl_client *client,
-                          struct wl_resource *shm_resource, uint32_t id, int fd, int32_t size) {
-            struct wlr_shm *shm = shm_from_resource(shm_resource);
-
-            if (size <= 0) {
-                wl_resource_post_error(shm_resource, WL_SHM_ERROR_INVALID_STRIDE,
-                                       "Invalid size (%d)", size);
-                close(fd);
-                return;
-            }
-
-            struct wlr_shm_mapping *mapping = mapping_create(fd, size);
-            if (mapping == NULL) {
-                wl_resource_post_error(shm_resource, WL_SHM_ERROR_INVALID_FD,
-                                       "Failed to create memory mapping");
-                close(fd);
-                return;
-            }
-
-//            struct wlr_shm_pool *pool = calloc(1, sizeof(*pool));
-//            if (pool == NULL) {
-//                wl_resource_post_no_memory(shm_resource);
-//                mapping_drop(mapping);
-//                return;
-//            }
-//
-//            uint32_t version = wl_resource_get_version(shm_resource);
-//            pool->resource =
-//                    wl_resource_create(client, &wl_shm_pool_interface, version, id);
-//            if (pool->resource == NULL) {
-//                wl_resource_post_no_memory(shm_resource);
-//                free(pool);
-//                return;
-//            }
-//            wl_resource_set_implementation(pool->resource, &pool_impl, pool,
-//                                           pool_handle_resource_destroy);
-//
-//            pool->mapping = mapping;
-//            pool->shm = shm;
-//            pool->fd = fd;
-//            wl_list_init(&pool->buffers);
-        },
-        .release = [](struct wl_client *client,
-                      struct wl_resource *resource) { wl_resource_destroy(resource); },
+        compositor_create_region
 };
 
-struct wlr_shm *shm_from_resource(struct wl_resource *resource) {
-    assert(wl_resource_instance_of(resource, &wl_shm_interface, &shm_impl));
-    return static_cast<wlr_shm *>(wl_resource_get_user_data(resource));
-}
+static const struct xdg_wm_base_interface xdg_shell_impl = {
+        .destroy = [](struct wl_client *client,
+                      struct wl_resource *resource) {
+            wl_resource_destroy(resource);
+        },
+        .create_positioner = [](struct wl_client *wl_client,
+                                struct wl_resource *wl_resource,
+                                uint32_t id) {
+            auto resource =
+                    wl_resource_create(wl_client,
+                                       &xdg_positioner_interface,
+                                       wl_resource_get_version(wl_resource), id);
+            if (resource == NULL) {
+                wl_client_post_no_memory(wl_client);
+                return;
+            }
+//            wl_resource_set_implementation(resource,
+//                                           &weston_desktop_xdg_positioner_implementation,
+//                                           positioner, weston_desktop_xdg_positioner_destroy);
+        },
+        .get_xdg_surface = [](struct wl_client *wl_client,
+                              struct wl_resource *resource,
+                              uint32_t id,
+                              struct wl_resource *surface_resource) {
+            assert(false);
+        },
+        .pong = [](struct wl_client *wl_client,
+                   struct wl_resource *resource,
+                   uint32_t serial) {
+            assert(false);
+        },
+};
 
 void implement(wl_display *wl_display) {
-    // register globals
-    wl_global_create(wl_display, &wl_shm_interface, wl_shm_interface.version,
-                     nullptr, [](struct wl_client *client, void *data, uint32_t version,
-                                 uint32_t id) {
-                struct wl_resource *resource = wl_resource_create(client, &wl_shm_interface,
-                                                                  version, id);
-                if (resource == NULL) {
-                    wl_client_post_no_memory(client);
-                    return;
-                }
-                wl_resource_set_implementation(resource, &shm_impl, nullptr, NULL);
-
-                //    for (size_t i = 0; i < shm->formats_len; i++) {
-                //        wl_shm_send_format(resource, shm->formats[i]);
-                //    }
-            });
-
+    // Compositor
     wl_global_create(wl_display, &wl_compositor_interface,
                      wl_compositor_interface.version, nullptr,
                      [](struct wl_client *wl_client, void *data,
@@ -272,6 +217,42 @@ void implement(wl_display *wl_display) {
                          }
                          wl_resource_set_implementation(resource, &compositor_impl, nullptr, NULL);
                      }
-
     );
+
+    // XDG Shell
+    wl_global_create(wl_display, &xdg_wm_base_interface,
+                     xdg_wm_base_interface.version, nullptr,
+                     [](struct wl_client *client, void *data,
+                        uint32_t version, uint32_t id) {
+                         struct wl_display *display;
+                         struct wl_event_loop *loop;
+
+                         auto resource = wl_resource_create(client, &xdg_wm_base_interface, version,
+                                                            id);
+                         if (resource == NULL) {
+                             wl_client_post_no_memory(client);
+                             return;
+                         }
+
+                         wl_resource_set_implementation(resource, &xdg_shell_impl,
+                                                        client,
+                                                        nullptr);
+
+                         display = wl_client_get_display(client);
+                         loop = wl_display_get_event_loop(display);
+                         auto ping_timer =
+                                 wl_event_loop_add_timer(loop,
+                                                         [](void *user_data) {
+                                                             return 1;
+                                                         },
+                                                         client);
+                         if (ping_timer == NULL) {
+                             wl_client_post_no_memory(client);
+                         }
+                     });
+
+    // SHM
+    wl_display_init_shm(wl_display);
+    wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_ARGB8888);
+    wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_XRGB8888);
 }

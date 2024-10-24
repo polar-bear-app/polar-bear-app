@@ -4,5 +4,6 @@
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/compositor/src/main/cpp/libffi" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/compositor/src/main/cpp/wayland" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/compositor/src/main/cpp/wayland-protocols" vcs="Git" />
   </component>
 </project>

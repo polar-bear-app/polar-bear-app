@@ -7,16 +7,18 @@
 #include "wayland/src/wayland-server.h"
 #include "implementations.h"
 #include "utils.h"
+#include "wayland/tests/test-compositor.h"
 
 #define LOG_TAG "PolarBearCompositor"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-void render_buffer(JNIEnv *env, jobject surface, struct wl_shm_buffer *shmBuffer) {
-    auto width = 1280;
-    auto height = 968;
+JNIEnv *globalEnv;
+JavaVM *globalVM;
+jobject globalSurface;
 
+void render_buffer(struct wl_shm_buffer *shmBuffer) {
     // Convert the Surface (jobject) to ANativeWindow
-    ANativeWindow *nativeWindow = ANativeWindow_fromSurface(env, surface);
+    ANativeWindow *nativeWindow = ANativeWindow_fromSurface(globalEnv, globalSurface);
 
     if (nativeWindow == NULL) {
         // Handle error
@@ -27,10 +29,8 @@ void render_buffer(JNIEnv *env, jobject surface, struct wl_shm_buffer *shmBuffer
     ANativeWindow_Buffer buffer;
 
     if (ANativeWindow_lock(nativeWindow, &buffer, NULL) == 0) {
-        if (buffer.width == width && buffer.height == height) {
-            // Assuming your pixel format is compatible
-            memcpy(buffer.bits, shmBuffer, height * buffer.stride * 4);
-        }
+        // Assuming your pixel format is compatible
+        memcpy(buffer.bits, shmBuffer, buffer.height * buffer.stride * 4);
         ANativeWindow_unlockAndPost(nativeWindow);
     }
 
@@ -60,8 +60,6 @@ wl_display *setup_compositor(const char *socket_name) {
         return nullptr;
     }
 
-    implement(wl_display);
-
     return wl_display;
 }
 
@@ -70,16 +68,22 @@ Java_app_polarbear_compositor_NativeLib_start(
         JNIEnv *env,
         jobject /* this */,
         jobject surface) {
+    globalSurface = env->NewGlobalRef(surface);
     auto socket_name = "wayland-0";
-    auto display = setup_compositor(socket_name);
+    auto wl_display = setup_compositor(socket_name);
 
-    //    render_buffer(env, surface, compositor->shm_buffer);
+    implement(wl_display, render_buffer);
 
-    std::thread compositor_thread([display]() {
+    env->GetJavaVM(&globalVM);
+    std::thread compositor_thread([wl_display]() {
+        globalVM->AttachCurrentThread(&globalEnv, nullptr);
         LOGI("Running Wayland display...");
-        wl_display_run(display);
-        wl_display_destroy(display);
+        wl_display_run(wl_display);
+        wl_display_destroy(wl_display);
+        globalEnv->DeleteGlobalRef(globalSurface);
+        globalVM->DetachCurrentThread();
     });
+
     compositor_thread.detach();
     return env->NewStringUTF(socket_name);
 }

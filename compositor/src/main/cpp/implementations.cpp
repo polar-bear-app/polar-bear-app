@@ -1,6 +1,7 @@
 //
 // Created by Nguyễn Hồng Phát on 12/10/24.
 //
+#include <jni.h>
 #include <string>
 #include <unistd.h>
 #include <android/log.h>
@@ -13,6 +14,16 @@
 #define LOG_TAG "PolarBearCompositorImplementations"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
+struct PolarBearGlobal {
+    wl_display *display;
+    wl_shm_buffer *buffer;
+    wl_resource *xdg_top_level;
+
+    void (*render)(wl_shm_buffer *);
+};
+
+struct PolarBearGlobal pb_global = {nullptr};
+
 static void
 surface_attach(struct wl_client *client,
                struct wl_resource *resource,
@@ -23,116 +34,35 @@ surface_attach(struct wl_client *client,
             wl_client_post_no_memory(client);
             return;
         }
-    }
-
-    if (wl_resource_get_version(resource) >= WL_SURFACE_OFFSET_SINCE_VERSION) {
-        if (sx != 0 || sy != 0) {
-            wl_resource_post_error(resource,
-                                   WL_SURFACE_ERROR_INVALID_OFFSET,
-                                   "Can't attach with an offset");
-            return;
-        }
+        pb_global.buffer = buffer;
     }
 }
 
-// static void
-// surface_damage(struct wl_client *client,
-//                struct wl_resource *resource,
-//                int32_t x, int32_t y, int32_t width, int32_t height)
-//{
-//     struct weston_surface *surface = wl_resource_get_user_data(resource);
-//
-//     if (width <= 0 || height <= 0)
-//         return;
-//
-//     pixman_region32_union_rect(&surface->pending.damage_surface,
-//                                &surface->pending.damage_surface,
-//                                x, y, width, height);
-// }
-// static void
-// surface_commit(struct wl_client *client, struct wl_resource *resource)
-//{
-//     struct weston_surface *surface = wl_resource_get_user_data(resource);
-//     struct weston_subsurface *sub = weston_surface_to_subsurface(surface);
-//     enum weston_surface_status status;
-//
-//     if (!weston_surface_is_pending_viewport_source_valid(surface)) {
-//         assert(surface->viewport_resource);
-//
-//         wl_resource_post_error(surface->viewport_resource,
-//                                WP_VIEWPORT_ERROR_OUT_OF_BUFFER,
-//                                "wl_surface@%d has viewport source outside buffer",
-//                                wl_resource_get_id(resource));
-//         return;
-//     }
-//
-//     if (!weston_surface_is_pending_viewport_dst_size_int(surface)) {
-//         assert(surface->viewport_resource);
-//
-//         wl_resource_post_error(surface->viewport_resource,
-//                                WP_VIEWPORT_ERROR_BAD_SIZE,
-//                                "wl_surface@%d viewport dst size not integer",
-//                                wl_resource_get_id(resource));
-//         return;
-//     }
-//
-//     if (surface->pending.acquire_fence_fd >= 0) {
-//         assert(surface->synchronization_resource);
-//
-//         if (!surface->pending.buffer) {
-//             fd_clear(&surface->pending.acquire_fence_fd);
-//             wl_resource_post_error(surface->synchronization_resource,
-//                                    ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_ERROR_NO_BUFFER,
-//                                    "wl_surface@%"PRIu32" no buffer for synchronization",
-//                                    wl_resource_get_id(resource));
-//             return;
-//         }
-//
-//         if (surface->pending.buffer->type == WESTON_BUFFER_SHM) {
-//             fd_clear(&surface->pending.acquire_fence_fd);
-//             wl_resource_post_error(surface->synchronization_resource,
-//                                    ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_ERROR_UNSUPPORTED_BUFFER,
-//                                    "wl_surface@%"PRIu32" unsupported buffer for synchronization",
-//                                    wl_resource_get_id(resource));
-//             return;
-//         }
-//     }
-//
-//     if (surface->pending.buffer_release_ref.buffer_release &&
-//         !surface->pending.buffer) {
-//         assert(surface->synchronization_resource);
-//
-//         wl_resource_post_error(surface->synchronization_resource,
-//                                ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_ERROR_NO_BUFFER,
-//                                "wl_surface@%"PRIu32" no buffer for synchronization",
-//                                wl_resource_get_id(resource));
-//         return;
-//     }
-//
-//     if (sub) {
-//         status = weston_subsurface_commit(sub);
-//     } else {
-//         status = WESTON_SURFACE_CLEAN;
-//         wl_list_for_each(sub, &surface->subsurface_list, parent_link) {
-//             if (sub->surface != surface)
-//                 status |= weston_subsurface_parent_commit(sub, 0);
-//         }
-//         status |= weston_surface_commit(surface);
-//     }
-//
-//     if (status & WESTON_SURFACE_DIRTY_SUBSURFACE_CONFIG)
-//         surface->compositor->view_list_needs_rebuild = true;
-// }
+static void
+surface_damage(struct wl_client *client,
+               struct wl_resource *resource,
+               int32_t x, int32_t y, int32_t width, int32_t height) {
+    LOGI("surface_damage");
+}
 
+static void
+surface_commit(struct wl_client *client, struct wl_resource *resource) {
+    LOGI("surface_commit");
+    if (pb_global.buffer != nullptr) {
+        pb_global.render(pb_global.buffer);
+    }
+    xdg_surface_send_configure(pb_global.xdg_top_level,
+                               wl_display_next_serial(pb_global.display));
+}
 
 static const struct wl_surface_interface surface_interface = {
         nullptr,        // surface_destroy
         surface_attach, // surface_attach
-        nullptr,        // surface_damage
+        surface_damage,        // surface_damage
         nullptr,        // surface_frame
         nullptr,        // surface_set_opaque_region
         nullptr,        // surface_set_input_region
-        nullptr,        // surface_commit
+        surface_commit,        // surface_commit
         nullptr,        // surface_set_buffer_transform
         nullptr,        // surface_set_buffer_scale
         nullptr,        // surface_damage_buffer
@@ -167,6 +97,38 @@ static const struct wl_compositor_interface compositor_impl = {
         compositor_create_region
 };
 
+
+static const struct xdg_toplevel_interface xdg_toplevel_impl = {
+        .set_title           = [](struct wl_client *wl_client,
+                                  struct wl_resource *resource,
+                                  const char *title)
+        {
+            LOGI("set_title %s", title);
+        },
+};
+
+static const struct xdg_surface_interface xdg_surface_impl = {
+        .get_toplevel        = [](struct wl_client *wl_client,
+                                  struct wl_resource *xdg_toplevel_resource,
+                                  uint32_t id) {
+            auto resource = wl_resource_create(wl_client,
+                                               &xdg_toplevel_interface,
+                                               wl_resource_get_version(xdg_toplevel_resource),
+                                               id);
+            wl_resource_set_implementation(resource, &xdg_toplevel_impl, nullptr,
+                                           nullptr);
+
+            pb_global.xdg_top_level = xdg_toplevel_resource;
+            xdg_surface_send_configure(pb_global.xdg_top_level,
+                                       wl_display_next_serial(pb_global.display));
+        },
+        .ack_configure       = [](struct wl_client *wl_client,
+                                  struct wl_resource *resource,
+                                  uint32_t serial) {
+            LOGI("ack_configure");
+        },
+};
+
 static const struct xdg_wm_base_interface xdg_shell_impl = {
         .destroy = [](struct wl_client *client,
                       struct wl_resource *resource) {
@@ -188,10 +150,15 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
 //                                           positioner, weston_desktop_xdg_positioner_destroy);
         },
         .get_xdg_surface = [](struct wl_client *wl_client,
-                              struct wl_resource *resource,
+                              struct wl_resource *xdg_surface_resource,
                               uint32_t id,
                               struct wl_resource *surface_resource) {
-            assert(false);
+            auto resource = wl_resource_create(wl_client,
+                                               &xdg_surface_interface,
+                                               wl_resource_get_version(xdg_surface_resource),
+                                               id);
+            wl_resource_set_implementation(resource, &xdg_surface_impl, nullptr, nullptr);
+
         },
         .pong = [](struct wl_client *wl_client,
                    struct wl_resource *resource,
@@ -200,7 +167,9 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
         },
 };
 
-void implement(wl_display *wl_display) {
+void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
+    pb_global.display = wl_display;
+    pb_global.render = render;
     // Compositor
     wl_global_create(wl_display, &wl_compositor_interface,
                      wl_compositor_interface.version, nullptr,

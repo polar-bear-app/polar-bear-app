@@ -7,4 +7,4 @@
 
 #endif //POLARBEAR_IMPLEMENTATIONS_H
 
-void implement(wl_display *wl_display);
+void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *));

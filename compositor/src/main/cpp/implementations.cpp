@@ -10,6 +10,7 @@
 
 #include "wayland-server.h"
 #include "xdg-shell.h"
+#include "utils.h"
 
 #define LOG_TAG "PolarBearCompositorImplementations"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -17,12 +18,33 @@
 struct PolarBearGlobal {
     wl_display *display;
     wl_shm_buffer *buffer;
-    wl_resource *xdg_top_level;
+    wl_resource *xdg_surface;
+    wl_resource *xdg_toplevel_surface;
 
     void (*render)(wl_shm_buffer *);
 };
 
 struct PolarBearGlobal pb_global = {nullptr};
+
+void send_configures() {
+    struct wl_event_loop *loop = wl_display_get_event_loop(pb_global.display);
+    wl_event_loop_add_idle(loop,
+                           [](void *data) {
+                               struct wl_array states;
+                               wl_array_init(&states);
+                               uint32_t *s = static_cast<uint32_t *>(wl_array_add(&states,
+                                                                                  sizeof(uint32_t)));
+                               *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
+                               xdg_toplevel_send_configure(pb_global.xdg_toplevel_surface, 1024, 768,
+                                                           &states);
+                               wl_array_release(&states);
+
+                               xdg_surface_send_configure(pb_global.xdg_surface,
+                                                          wl_display_next_serial(
+                                                                  pb_global.display));
+                           },
+                           nullptr);
+}
 
 static void
 surface_attach(struct wl_client *client,
@@ -51,15 +73,23 @@ surface_commit(struct wl_client *client, struct wl_resource *resource) {
     if (pb_global.buffer != nullptr) {
         pb_global.render(pb_global.buffer);
     }
-    xdg_surface_send_configure(pb_global.xdg_top_level,
-                               wl_display_next_serial(pb_global.display));
+    send_configures();
 }
 
-static const struct wl_surface_interface surface_interface = {
+static const struct wl_surface_interface surface_impl = {
         nullptr,        // surface_destroy
         surface_attach, // surface_attach
         surface_damage,        // surface_damage
-        nullptr,        // surface_frame
+        [](struct wl_client *client,
+           struct wl_resource *resource, uint32_t callback) {
+            auto cb = wl_resource_create(client, &wl_callback_interface, 1, callback);
+
+            wl_resource_set_implementation(cb, NULL, NULL,
+                                           nullptr);
+
+            wl_callback_send_done(cb, timespec_to_msec(new timespec()));
+
+        },        // surface_frame
         nullptr,        // surface_set_opaque_region
         nullptr,        // surface_set_input_region
         surface_commit,        // surface_commit
@@ -69,13 +99,27 @@ static const struct wl_surface_interface surface_interface = {
         nullptr,        // surface_offset
 };
 
+static const struct wl_region_interface region_impl = {
+        [](struct wl_client *client, struct wl_resource *resource) {
+            wl_resource_destroy(resource);
+        },
+        [](struct wl_client *client, struct wl_resource *resource,
+           int32_t x, int32_t y, int32_t width, int32_t height) {
+            LOGI("region_add");
+        },
+        [](struct wl_client *client, struct wl_resource *resource,
+           int32_t x, int32_t y, int32_t width, int32_t height) {
+            LOGI("region_subtract");
+        }
+};
+
 static void
 compositor_create_surface(struct wl_client *client,
                           struct wl_resource *resource, uint32_t id) {
     auto surface =
             wl_resource_create(client, &wl_surface_interface,
                                wl_resource_get_version(resource), id);
-    wl_resource_set_implementation(surface, &surface_interface,
+    wl_resource_set_implementation(surface, &surface_impl,
                                    surface, nullptr);
 }
 
@@ -89,7 +133,7 @@ compositor_create_region(struct wl_client *client,
         wl_resource_post_no_memory(resource);
         return;
     }
-    //    wl_resource_set_implementation(region, &region_interface, region, nullptr);
+    wl_resource_set_implementation(region, &region_impl, region, nullptr);
 }
 
 static const struct wl_compositor_interface compositor_impl = {
@@ -97,30 +141,68 @@ static const struct wl_compositor_interface compositor_impl = {
         compositor_create_region
 };
 
-
 static const struct xdg_toplevel_interface xdg_toplevel_impl = {
-        .set_title           = [](struct wl_client *wl_client,
-                                  struct wl_resource *resource,
-                                  const char *title)
-        {
+
+        [](struct wl_client *client, struct wl_resource *resource) {},
+
+        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent) {},
+
+        [](struct wl_client *wl_client,
+           struct wl_resource *resource,
+           const char *title) {
             LOGI("set_title %s", title);
+            send_configures();
         },
+
+        [](struct wl_client *wl_client,
+           struct wl_resource *resource,
+           const char *app_id) {
+            LOGI("set_app_id %s", app_id);
+            send_configures();
+        },
+
+        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
+           uint32_t serial, int32_t x, int32_t y) {},
+
+        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
+           uint32_t serial) {},
+
+        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
+           uint32_t serial, uint32_t edges) {},
+
+        [](struct wl_client *client, struct wl_resource *resource, int32_t width,
+           int32_t height) {},
+
+        [](struct wl_client *client, struct wl_resource *resource, int32_t width,
+           int32_t height) {},
+
+        [](struct wl_client *client, struct wl_resource *resource) {},
+
+        [](struct wl_client *client, struct wl_resource *resource) {},
+
+        [](struct wl_client *wl_client,
+           struct wl_resource *resource,
+           struct wl_resource *output_resource) {
+            send_configures();
+        },
+
+        [](struct wl_client *client, struct wl_resource *resource) {},
+
+        [](struct wl_client *client, struct wl_resource *resource) {},
 };
 
 static const struct xdg_surface_interface xdg_surface_impl = {
         .get_toplevel        = [](struct wl_client *wl_client,
-                                  struct wl_resource *xdg_toplevel_resource,
+                                  struct wl_resource *xdg_surface_resource,
                                   uint32_t id) {
             auto resource = wl_resource_create(wl_client,
                                                &xdg_toplevel_interface,
-                                               wl_resource_get_version(xdg_toplevel_resource),
+                                               wl_resource_get_version(xdg_surface_resource),
                                                id);
             wl_resource_set_implementation(resource, &xdg_toplevel_impl, nullptr,
                                            nullptr);
 
-            pb_global.xdg_top_level = xdg_toplevel_resource;
-            xdg_surface_send_configure(pb_global.xdg_top_level,
-                                       wl_display_next_serial(pb_global.display));
+            pb_global.xdg_toplevel_surface = resource;
         },
         .ack_configure       = [](struct wl_client *wl_client,
                                   struct wl_resource *resource,
@@ -150,20 +232,27 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
 //                                           positioner, weston_desktop_xdg_positioner_destroy);
         },
         .get_xdg_surface = [](struct wl_client *wl_client,
-                              struct wl_resource *xdg_surface_resource,
+                              struct wl_resource *xdg_wm_base_resource,
                               uint32_t id,
-                              struct wl_resource *surface_resource) {
+                              struct wl_resource *wl_surface_resource) {
             auto resource = wl_resource_create(wl_client,
                                                &xdg_surface_interface,
-                                               wl_resource_get_version(xdg_surface_resource),
+                                               wl_resource_get_version(wl_surface_resource),
                                                id);
             wl_resource_set_implementation(resource, &xdg_surface_impl, nullptr, nullptr);
 
+            pb_global.xdg_surface = resource;
         },
         .pong = [](struct wl_client *wl_client,
                    struct wl_resource *resource,
                    uint32_t serial) {
-            assert(false);
+            LOGI("pong");
+        },
+};
+
+static const struct wl_output_interface output_interface = {
+        [](struct wl_client *client, struct wl_resource *resource) {
+            wl_resource_destroy(resource);
         },
 };
 
@@ -207,21 +296,60 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
                                                         client,
                                                         nullptr);
 
-                         display = wl_client_get_display(client);
-                         loop = wl_display_get_event_loop(display);
-                         auto ping_timer =
-                                 wl_event_loop_add_timer(loop,
-                                                         [](void *user_data) {
-                                                             return 1;
-                                                         },
-                                                         client);
-                         if (ping_timer == NULL) {
-                             wl_client_post_no_memory(client);
-                         }
+                         xdg_wm_base_send_ping(resource, wl_display_next_serial(pb_global.display));
                      });
+
+    // Output
+    wl_global_create(wl_display,
+                     &wl_output_interface, 4,
+                     nullptr, [](struct wl_client *client,
+                                 void *data, uint32_t version, uint32_t id) {
+
+                auto resource = wl_resource_create(client, &wl_output_interface,
+                                                   version, id);
+
+                wl_resource_set_implementation(resource, &output_interface, nullptr,
+                                               nullptr);
+
+                wl_output_send_geometry(resource,
+                                        0,
+                                        0,
+                                        1024,
+                                        768,
+                                        WL_OUTPUT_SUBPIXEL_NONE,
+                                        "Polar Bear", "Polar Bear Virtual Wayland Display",
+                                        WL_OUTPUT_TRANSFORM_NORMAL);
+                if (version >= WL_OUTPUT_SCALE_SINCE_VERSION)
+                    wl_output_send_scale(resource,
+                                         1);
+
+                wl_output_send_mode(resource,
+                                    WL_OUTPUT_MODE_CURRENT,
+                                    1024,
+                                    768,
+                                    60 * 1000LL);
+
+                if (version >= WL_OUTPUT_NAME_SINCE_VERSION)
+                    wl_output_send_name(resource, "Polar Bear");
+
+                if (version >= WL_OUTPUT_DESCRIPTION_SINCE_VERSION)
+                    wl_output_send_description(resource, "Polar Bear Virtual Wayland Display");
+
+                if (version >= WL_OUTPUT_DONE_SINCE_VERSION)
+                    wl_output_send_done(resource);
+            });
 
     // SHM
     wl_display_init_shm(wl_display);
     wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_ARGB8888);
     wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_XRGB8888);
+
+    // Log
+    wl_display_add_protocol_logger(wl_display, [](void *user_data,
+                                                  enum wl_protocol_logger_type direction,
+                                                  const struct wl_protocol_logger_message *message) {
+        LOGI("[LOG] %s %s@%d:%s", direction == WL_PROTOCOL_LOGGER_REQUEST ? "<-" : "->",
+             message->resource->object.interface->name,
+             message->resource->object.interface->version, message->message->name);
+    }, nullptr);
 }

@@ -198,7 +198,7 @@ fun WaylandDisplay(render: (String) -> Unit) {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         // Surface is ready for drawing, access the Surface via holder.surface
                         val display = NativeLib().start(holder.surface);
-                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display weston --debug")
+                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=1 weston --use-pixman --fullscreen --debug")
                     }
 
                     override fun surfaceChanged(

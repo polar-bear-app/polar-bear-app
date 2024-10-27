@@ -117,3 +117,7 @@ void redirect_stds() {
     redirect_fd_to_pipe(STDOUT_FILENO, stdout_pipe_fds); // Redirect stdout
     redirect_fd_to_pipe(STDERR_FILENO, stderr_pipe_fds); // Redirect stderr
 }
+
+int64_t timespec_to_msec(const struct timespec *a) {
+    return (int64_t)a->tv_sec * 1000 + a->tv_nsec / 1000000;
+}

@@ -14,3 +14,5 @@ int create_unix_socket(const std::string &socket_path);
 void close_unix_socket(int fd);
 
 void redirect_stds();
+
+int64_t timespec_to_msec(const struct timespec *a);

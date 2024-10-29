@@ -16,26 +16,40 @@ JNIEnv *globalEnv;
 JavaVM *globalVM;
 jobject globalSurface;
 
-void render_buffer(struct wl_shm_buffer *shmBuffer) {
+void render_buffer(struct wl_shm_buffer* waylandBuffer) {
     // Convert the Surface (jobject) to ANativeWindow
-    ANativeWindow *nativeWindow = ANativeWindow_fromSurface(globalEnv, globalSurface);
+    ANativeWindow *androidNativeWindow = ANativeWindow_fromSurface(globalEnv, globalSurface);
+    wl_shm_buffer_begin_access(waylandBuffer);
 
-    if (nativeWindow == NULL) {
-        // Handle error
-        return;
-    }
+    // Step 2: Get buffer details.
+    void *waylandData = wl_shm_buffer_get_data(waylandBuffer);
+    int32_t width = wl_shm_buffer_get_width(waylandBuffer);
+    int32_t height = wl_shm_buffer_get_height(waylandBuffer);
+    int32_t stride = wl_shm_buffer_get_stride(waylandBuffer);
+    uint32_t format = wl_shm_buffer_get_format(waylandBuffer);
 
-    // Now you can render using the ANativeWindow, for example:
+    // Step 3: Configure the native window.
+    ANativeWindow_setBuffersGeometry(androidNativeWindow, width, height, format == WL_SHM_FORMAT_ARGB8888 ? AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM : AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+
+    // Step 4: Lock the native window buffer for writing.
     ANativeWindow_Buffer buffer;
+    if (ANativeWindow_lock(androidNativeWindow, &buffer, nullptr) == 0) {
+        // Step 5: Copy the data from the Wayland buffer to the native window buffer.
+        uint8_t *dest = static_cast<uint8_t *>(buffer.bits);
+        uint8_t *src = static_cast<uint8_t *>(waylandData);
 
-    if (ANativeWindow_lock(nativeWindow, &buffer, NULL) == 0) {
-        // Assuming your pixel format is compatible
-        memcpy(buffer.bits, shmBuffer, buffer.height * buffer.stride * 4);
-        ANativeWindow_unlockAndPost(nativeWindow);
+        for (int y = 0; y < height; y++) {
+            memcpy(dest, src, width * 4); // 4 bytes per pixel for RGBX_8888.
+            dest += buffer.stride * 4;    // Move to the next line in the native buffer.
+            src += stride;                // Move to the next line in the Wayland buffer.
+        }
+
+        // Step 6: Unlock and post the buffer to display the content.
+        ANativeWindow_unlockAndPost(androidNativeWindow);
     }
 
-    // Release the native window when done
-    ANativeWindow_release(nativeWindow);
+    // Step 7: End access to the Wayland buffer.
+    wl_shm_buffer_end_access(waylandBuffer);
 }
 
 wl_display *setup_compositor(const char *socket_name) {

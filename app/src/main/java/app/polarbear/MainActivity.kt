@@ -1,17 +1,27 @@
 package app.polarbear
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -21,31 +31,49 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import app.polarbear.ui.theme.PolarBearTheme
-import app.polarbear.utils.checkAndPacstrap
-import app.polarbear.utils.process
 import app.polarbear.compositor.NativeLib
-import java.io.File
-import java.io.OutputStreamWriter
-import kotlin.concurrent.thread
+import app.polarbear.ui.theme.PolarBearTheme
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
-    private val stdout = mutableStateOf("")
-    private var stdin: OutputStreamWriter? = null
+
+    private var serviceBound = false
+    private var prootService: ProotService? = null
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            val binder = service as ProotService.LocalBinder
+            prootService = binder.getService()
+            serviceBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            serviceBound = false
+            prootService = null
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        Intent(this, ProotService::class.java).also {
+            startService(it)
+            bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
+        }
 
         setContent {
             PolarBearTheme {
@@ -54,60 +82,28 @@ class MainActivity : ComponentActivity() {
                         WaylandDisplay {
                             proot(it)
                         }
-                        Overlay()
+                        SwipeableRightPanel() {
+                            Overlay()
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun proot(command: String) {
-        checkAndPacstrap(this, stdout) {
-            val appInfo = this.applicationInfo
-            val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
-            process(
-                listOf(
-                    appInfo.nativeLibraryDir + "/proot.so",
-                    "-r", rootFs,
-                    "-L",
-                    "--link2symlink",
-                    "--kill-on-exit",
-                    "--root-id",
-                    "--cwd=/root",
-                    "--bind=/dev",
-//                "--bind=\"/dev/urandom:/dev/random\"",
-                    "--bind=/proc",
-//                "--bind=\"/proc/self/fd:/dev/fd\"",
-//                "--bind=\"/proc/self/fd/0:/dev/stdin\"",
-//                "--bind=\"/proc/self/fd/1:/dev/stdout\"",
-//                "--bind=\"/proc/self/fd/2:/dev/stderr\"",
-                    "--bind=/sys",
-//                "--bind=\"${rootFs}/proc/.loadavg:/proc/loadavg\"",
-//                "--bind=\"${rootFs}/proc/.stat:/proc/stat\"",
-//                "--bind=\"${rootFs}/proc/.uptime:/proc/uptime\"",
-//                "--bind=\"${rootFs}/proc/.version:/proc/version\"",
-//                "--bind=\"${rootFs}/proc/.vmstat:/proc/vmstat\"",
-//                "--bind=\"${rootFs}/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap\"",
-//                "--bind=\"${rootFs}/sys/.empty:/sys/fs/selinux\"",
-                    "/usr/bin/env", "-i",
-                    "\"HOME=/root\"",
-                    "\"LANG=C.UTF-8\"",
-                    "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
-                    "\"TERM=\${TERM-xterm-256color}\"",
-                    "\"TMPDIR=/tmp\"",
-                    "/bin/sh"
-                ), environment = mapOf(
-                    "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
-                    "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
-                ), output = {
-                    stdout.value += "${it}\n"
-                }, input = {
-                    this.stdin = it.writer()
-                    this.stdin?.appendLine(command)
-                    this.stdin?.flush()
-                }
-            )
+    override fun onStop() {
+        super.onStop()
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
         }
+    }
+
+    private fun proot(command: String) {
+        val intent = Intent(this, ProotService::class.java).apply {
+            putExtra("command", command)
+        }
+        startForegroundService(intent)
     }
 
     @Composable
@@ -122,6 +118,7 @@ class MainActivity : ComponentActivity() {
 
         Box(modifier = Modifier
             .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
             .clickable {
                 openAlertDialog.value = true
             }) {
@@ -144,9 +141,12 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 openAlertDialog.value = false
                                 // Handle the user input here
-                                stdin?.appendLine(userInput.value)
-                                stdin?.appendLine("echo '# '")
-                                stdin?.flush()
+                                prootService!!.flush(
+                                    """
+                                        ${userInput.value}
+                                        echo '# '
+                                    """.trimIndent()
+                                )
                                 userInput.value = ""
                             }
                         ) {
@@ -173,16 +173,13 @@ class MainActivity : ComponentActivity() {
                     .verticalScroll(scrollState) // Enable vertical scrolling
                     .padding(16.dp) // Optional: Add some padding
             ) {
-                Text(
-                    text = stdout.value,
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.Start) // Align text to the start
-                )
-            }
-
-            // Automatically scroll to the end when the text changes
-            LaunchedEffect(stdout.value) {
-                scrollState.animateScrollTo(scrollState.maxValue) // Scroll to the end
+                if (prootService != null) {
+                    Text(
+                        text = prootService!!.getLogs().joinToString("\n"),
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Start) // Align text to the start
+                    )
+                }
             }
         }
     }
@@ -198,7 +195,7 @@ fun WaylandDisplay(render: (String) -> Unit) {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         // Surface is ready for drawing, access the Surface via holder.surface
                         val display = NativeLib().start(holder.surface);
-                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=1 weston --use-pixman --fullscreen --debug")
+                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
                     }
 
                     override fun surfaceChanged(
@@ -215,4 +212,44 @@ fun WaylandDisplay(render: (String) -> Unit) {
         },
         modifier = Modifier.fillMaxSize()
     )
+}
+
+
+@Composable
+fun SwipeableRightPanel(content: @Composable () -> Unit) {
+    var panelOffset by remember { mutableStateOf(0f) }
+    val animatedPanelWidth by animateDpAsState(targetValue = (panelOffset).dp)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume() // Consume the gesture to prevent it from propagating
+                        panelOffset = max(
+                            0f,
+                            min(300f, panelOffset - dragAmount)
+                        ) // Limit panel width between 0 and 300
+                    },
+                    onDragEnd = {
+                        // Snap to open or closed based on drag distance
+                        panelOffset = if (panelOffset > 150) 300f else 0f
+                    }
+                )
+            }
+    ) {
+
+        // Right panel, animated width based on drag distance
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(animatedPanelWidth)
+                .background(Color.DarkGray)
+                .align(Alignment.CenterEnd),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    }
 }

@@ -83,7 +83,7 @@ Java_app_polarbear_compositor_NativeLib_start(
         jobject /* this */,
         jobject surface) {
     globalSurface = env->NewGlobalRef(surface);
-    auto socket_name = "wayland-0";
+    auto socket_name = "wayland-pb";
     auto wl_display = setup_compositor(socket_name);
 
     implement(wl_display, render_buffer);

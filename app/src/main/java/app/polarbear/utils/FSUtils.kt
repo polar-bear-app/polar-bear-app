@@ -8,7 +8,7 @@ import kotlin.concurrent.thread
 
 fun checkAndPacstrap(
     context: Context,
-    stdout: MutableState<String>,
+    addLogLine: (line: String) -> Unit,
     onFinished: (exitCode: Int) -> Unit
 ) {
     try {
@@ -21,14 +21,14 @@ fun checkAndPacstrap(
         var shouldPacstrap = false
         if (!destinationFolder.exists() || destinationFolder.listFiles().isNullOrEmpty()) {
             shouldPacstrap = true
-            stdout.value = "Arch Linux is not installed! Installing...\n"
+            addLogLine("Arch Linux is not installed! Installing...")
         } else if (tempTarFile.exists()) {
             shouldPacstrap = true
-            stdout.value = "Previous installation failed. Retrying...\n"
+            addLogLine("Previous installation failed. Retrying...")
         }
         if (shouldPacstrap) {
             thread {
-                stdout.value += "(This may take a few minutes.)\n"
+                addLogLine("(This may take a few minutes.)")
 
                 destinationFolder.deleteRecursively()
 
@@ -56,9 +56,7 @@ fun checkAndPacstrap(
                     destinationFolder.parentFile!!.absolutePath  // Specify the destination directory
                 )
 
-                process(command, output = {
-                    stdout.value += "${it}\n"
-                }, onFinished = {
+                process(command, output = addLogLine, onFinished = {
                     tempTarFile.delete()
                     onFinished(it)
                 })
@@ -67,6 +65,6 @@ fun checkAndPacstrap(
             onFinished(0)
         }
     } catch (e: Exception) {
-        stdout.value += "=== Unexpected error: ${e.message} ==="
+        addLogLine("=== Unexpected error: ${e.message} ===")
     }
 }

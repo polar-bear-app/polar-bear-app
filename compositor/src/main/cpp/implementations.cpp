@@ -234,10 +234,45 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
         },
 };
 
-static const struct wl_output_interface output_interface = {
+static const struct wl_output_interface output_impl = {
         [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
         },
+};
+
+static const struct wl_pointer_interface pointer_impl = {
+        [](struct wl_client *client,
+           struct wl_resource *resource,
+           uint32_t serial,
+           struct wl_resource *surface,
+           int32_t hotspot_x,
+           int32_t hotspot_y) {
+
+        },
+        [](struct wl_client *client,
+           struct wl_resource *resource) {
+
+        }
+};
+
+static const struct wl_seat_interface seat_impl = {
+        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+            auto cr = wl_resource_create(client, &wl_pointer_interface,
+                                         wl_resource_get_version(resource), id);
+
+            wl_resource_set_implementation(cr, &pointer_impl, nullptr,
+                                           nullptr);
+
+            wl_pointer_send_enter(cr,
+                                  wl_display_next_serial(pb_global.display),
+                                  pb_global.xdg_surface,
+                                  wl_fixed_from_double(0),
+                                  wl_fixed_from_double(0));
+            wl_pointer_send_frame(cr);
+        },
+        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
+        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
+        [](struct wl_client *client, struct wl_resource *resource) {},
 };
 
 void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
@@ -292,7 +327,7 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
                 auto resource = wl_resource_create(client, &wl_output_interface,
                                                    version, id);
 
-                wl_resource_set_implementation(resource, &output_interface, nullptr,
+                wl_resource_set_implementation(resource, &output_impl, nullptr,
                                                nullptr);
 
                 wl_output_send_geometry(resource,
@@ -323,10 +358,21 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
                     wl_output_send_done(resource);
             });
 
+    // Seat
+    wl_global_create(wl_display,
+                     &wl_seat_interface, wl_seat_interface.version,
+                     nullptr, [](struct wl_client *client,
+                                 void *data, uint32_t version, uint32_t id) {
+
+                auto resource = wl_resource_create(client, &wl_seat_interface,
+                                                   version, id);
+
+                wl_resource_set_implementation(resource, &seat_impl, nullptr,
+                                               nullptr);
+            });
+
     // SHM
     wl_display_init_shm(wl_display);
-    wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_ARGB8888);
-    wl_display_add_shm_format(wl_display, WL_SHM_FORMAT_XRGB8888);
 
     // Log
     wl_display_add_protocol_logger(wl_display, [](void *user_data,
@@ -336,4 +382,5 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
              message->resource->object.interface->name,
              message->resource->object.interface->version, message->message->name);
     }, nullptr);
+
 }

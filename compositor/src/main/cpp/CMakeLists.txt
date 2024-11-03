@@ -29,7 +29,8 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         ${CMAKE_SOURCE_DIR}/wayland/build/src/xdg-shell.c
         compositor.cpp
         implementations.cpp
-        utils.cpp)
+        utils.cpp
+        data.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/wayland/build/src
         ${CMAKE_SOURCE_DIR}/wayland/src)

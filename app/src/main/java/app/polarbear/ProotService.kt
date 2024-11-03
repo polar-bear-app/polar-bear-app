@@ -25,7 +25,6 @@ class ProotService : Service() {
         const val NOTIFICATION_ID = 1
 
         const val ACTION_STOP = "ACTION_STOP"
-        const val ACTION_KILL = "ACTION_KILL"
         const val ACTION_LOGS = "ACTION_LOGS"
     }
 
@@ -54,15 +53,7 @@ class ProotService : Service() {
 
         when (intent?.action) {
             ACTION_STOP -> {
-                // Calls NDK function to stop the job
-            }
-
-            ACTION_KILL -> {
-                // Calls NDK function to kill the job
-            }
-
-            ACTION_LOGS -> {
-                // Calls NDK function to show logs
+                this.stopSelf();
             }
 
             else -> {
@@ -120,15 +111,20 @@ class ProotService : Service() {
         return START_NOT_STICKY
     }
 
-
     private fun createNotification(): Notification {
         val contentIntent = Intent(this, MainActivity::class.java).apply {
-            flags =
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        val stopIntent = Intent(this, ProotService::class.java).apply { action = ACTION_STOP }
-        val killIntent = Intent(this, ProotService::class.java).apply { action = ACTION_KILL }
-        val logsIntent = Intent(this, ProotService::class.java).apply { action = ACTION_LOGS }
+
+        // Stop intent to stop the service and close the app
+        val stopIntent = Intent(this, ProotService::class.java).apply {
+            // No action is needed here since we are directly stopping the service
+        }
+
+        val logsIntent = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_LOGS // Set action to indicate logs should be shown
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK // Use the same flags as contentIntent
+        }
 
         val stopPendingIntent = PendingIntent.getService(
             this,
@@ -136,15 +132,10 @@ class ProotService : Service() {
             stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val killPendingIntent = PendingIntent.getService(
+
+        val logsPendingIntent = PendingIntent.getActivity(
             this,
             1,
-            killIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val logsPendingIntent = PendingIntent.getService(
-            this,
-            2,
             logsIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -161,7 +152,6 @@ class ProotService : Service() {
                 )
             )
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
-            .addAction(android.R.drawable.ic_menu_delete, "Kill", killPendingIntent)
             .addAction(android.R.drawable.ic_menu_info_details, "Logs", logsPendingIntent)
             .build()
     }

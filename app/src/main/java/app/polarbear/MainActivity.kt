@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.ComponentActivity
@@ -14,7 +15,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -44,19 +44,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.polarbear.compositor.NativeLib
+import app.polarbear.data.motionEventToData
 import app.polarbear.ui.theme.PolarBearTheme
 import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
+    private val nativeLib = NativeLib()
 
     private var serviceBound = false
     private var prootService: ProotService? = null
+    private var panelOffset by mutableStateOf(0f) // This will control the offset of the panel
+    private var panelWidth by mutableStateOf(0.dp) // This will store the width of the panel
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -80,18 +85,20 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            PolarBearTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Box(modifier = Modifier.padding(innerPadding)) {
-                        WaylandDisplay {
-                            proot(it)
-                        }
-                        SwipeableRightPanel() {
-                            Overlay()
-                        }
-                    }
-                }
-            }
+            // Set the panel width based on screen width
+            val configuration = LocalConfiguration.current
+            val maxPanelWidth =
+                (configuration.screenWidthDp / 2).dp // Maximum width is half of the screen width
+            panelWidth =
+                (500.dp).coerceAtMost(maxPanelWidth) // Set the panel width capped at half the screen width
+
+
+            PolarBearApp()
+        }
+
+        // Handle intent on initial launch
+        if (intent.action == ProotService.ACTION_LOGS) {
+            revealRightPanel() // Call the function to reveal the right panel
         }
     }
 
@@ -111,7 +118,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun Overlay() {
+    fun InteractiveLogView() {
         // Remember a scroll state
         val openAlertDialog = remember { mutableStateOf(false) }
         val userInput = remember { mutableStateOf("") }
@@ -168,7 +175,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-                LogView()
+            LogView()
         }
     }
 
@@ -199,86 +206,121 @@ class MainActivity : ComponentActivity() {
                 text = logs.value.joinToString("\n"),
                 color = Color.White,
                 textAlign = TextAlign.Start,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
             )
         }
     }
-}
 
-@Composable
-fun WaylandDisplay(render: (String) -> Unit) {
+    private fun revealRightPanel() {
+        // Your logic to reveal the right panel
+        // You may need to modify the state variable that controls the panel's visibility
+        // For example:
+        panelOffset = 0f
+    }
 
-    AndroidView(
-        factory = { context ->
-            SurfaceView(context).apply {
-                holder.addCallback(object : SurfaceHolder.Callback {
-                    override fun surfaceCreated(holder: SurfaceHolder) {
-                        // Surface is ready for drawing, access the Surface via holder.surface
-                        val display = NativeLib().start(holder.surface);
-                        render("XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
-                    }
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent) // Set the new intent to access it later
 
-                    override fun surfaceChanged(
-                        holder: SurfaceHolder, format: Int, width: Int, height: Int
-                    ) {
-                        // Handle surface changes, such as size or format updates
-                    }
+        if (intent?.action == ProotService.ACTION_LOGS) {
+            revealRightPanel() // Call the function to reveal the right panel
+        }
+    }
 
-                    override fun surfaceDestroyed(holder: SurfaceHolder) {
-                        // Cleanup resources when the surface is destroyed
-                    }
-                })
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
 
-@Composable
-fun SwipeableRightPanel(content: @Composable () -> Unit) {
-    var panelOffset by remember { mutableStateOf(0f) }
-    val configuration = LocalConfiguration.current
-    val maxPanelWidth = (configuration.screenWidthDp / 2).dp // Maximum width is half of the screen width
-    val panelWidth = (500.dp).coerceAtMost(maxPanelWidth) // Set the panel width capped at half the screen width
-    val animatedPanelOffset by animateDpAsState(targetValue = panelOffset.dp)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                // Use awaitPointerEventScope to track pointers
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent() // Wait for a pointer event
-                        if (event.changes.size == 2) { // Check for two fingers
-                            val dragAmount = event.changes[0].positionChange().x
-                            // Only respond to two-finger swipes
-                            if (event.changes[0].pressed && event.changes[1].pressed) {
-                                panelOffset = max(
-                                    0f,
-                                    min(panelWidth.toPx(), panelOffset - dragAmount)
-                                ) // Limit panel offset between 0 and panelWidth
+    @Composable
+    fun PolarBearApp() {
+        val animatedPanelOffset by animateDpAsState(targetValue = panelOffset.dp)
+        PolarBearTheme {
+            Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                Box(modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        // Use awaitPointerEventScope to track pointers
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent() // Wait for a pointer event
+                                if (event.changes.size == 2) { // Check for two fingers
+                                    val dragAmount = event.changes[0].positionChange().x
+                                    // Only respond to two-finger swipes
+                                    if (event.changes[0].pressed && event.changes[1].pressed) {
+                                        this@MainActivity.panelOffset = max(
+                                            0f,
+                                            min(
+                                                panelWidth.toPx(),
+                                                this@MainActivity.panelOffset - dragAmount
+                                            )
+                                        ) // Limit panel offset between 0 and panelWidth
+                                    }
+                                }
+                                // Handle drag end
+                                if (event.changes.all { !it.pressed }) {
+                                    // Snap to open or closed based on drag distance
+                                    this@MainActivity.panelOffset =
+                                        if (this@MainActivity.panelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                }
                             }
                         }
-                        // Handle drag end
-                        if (event.changes.all { !it.pressed }) {
-                            // Snap to open or closed based on drag distance
-                            panelOffset = if (panelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
-                        }
+                    }
+                ) {
+                    WaylandDisplay {
+                        proot(it)
+                    }
+                    // Right panel, constant width with animated x-axis offset
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(panelWidth)
+                            .offset(x = animatedPanelOffset) // Animate the x-axis offset
+                            .background(Color.DarkGray)
+                            .align(Alignment.CenterEnd),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        InteractiveLogView()
                     }
                 }
             }
-    ) {
-        // Right panel, constant width with animated x-axis offset
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(panelWidth)
-                .offset(x = animatedPanelOffset) // Animate the x-axis offset
-                .background(Color.DarkGray)
-                .align(Alignment.CenterEnd),
-            contentAlignment = Alignment.Center
-        ) {
-            content()
         }
     }
+
+    @Composable
+    fun WaylandDisplay(render: (String) -> Unit) {
+
+        AndroidView(
+            factory = { context ->
+                SurfaceView(context).apply {
+// Enable touch handling on the SurfaceView
+                    setOnTouchListener { view, event ->
+                        // Handle touch events here
+                        val data = motionEventToData(event, view)
+                        nativeLib.sendTouchEvent(data)
+                        performClick() // click and pointer events should be handled differently
+                        true // Return true to indicate the event was handled
+                    }
+
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            // Surface is ready for drawing, access the Surface via holder.surface
+                            val display = nativeLib.start(holder.surface);
+                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
+                        }
+
+                        override fun surfaceChanged(
+                            holder: SurfaceHolder, format: Int, width: Int, height: Int
+                        ) {
+                            // Handle surface changes, such as size or format updates
+                        }
+
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            // Cleanup resources when the surface is destroyed
+                        }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+
 }

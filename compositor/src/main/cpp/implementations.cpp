@@ -2,6 +2,7 @@
 // Created by Nguyễn Hồng Phát on 12/10/24.
 //
 #include <jni.h>
+#include <thread>
 #include <string>
 #include <unistd.h>
 #include <android/log.h>
@@ -11,6 +12,7 @@
 #include "wayland-server.h"
 #include "xdg-shell.h"
 #include "utils.h"
+#include "data.h"
 
 #define LOG_TAG "PolarBearCompositorImplementations"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -20,6 +22,7 @@ struct PolarBearGlobal {
     wl_shm_buffer *buffer;
     wl_resource *xdg_surface;
     wl_resource *xdg_toplevel_surface;
+    wl_resource *touch;
 
     void (*render)(wl_shm_buffer *);
 };
@@ -255,6 +258,12 @@ static const struct wl_pointer_interface pointer_impl = {
         }
 };
 
+static const struct wl_touch_interface touch_impl = {
+        [](struct wl_client *client, struct wl_resource *resource) {
+            wl_resource_destroy(resource);
+        }
+};
+
 static const struct wl_seat_interface seat_impl = {
         [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto cr = wl_resource_create(client, &wl_pointer_interface,
@@ -271,11 +280,46 @@ static const struct wl_seat_interface seat_impl = {
             wl_pointer_send_frame(cr);
         },
         [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
+        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+            auto touch = wl_resource_create(client, &wl_touch_interface,
+                                            wl_resource_get_version(resource), id);
+
+            wl_resource_set_implementation(touch, &touch_impl,
+                                           nullptr, nullptr);
+
+            pb_global.touch = touch;
+        },
         [](struct wl_client *client, struct wl_resource *resource) {},
 };
 
-void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
+
+wl_display *setup_compositor(const char *socket_name) {
+    struct wl_display *wl_display = wl_display_create();
+    if (!wl_display) {
+        LOGI("Unable to create Wayland display.");
+        return nullptr;
+    }
+    auto socket_path =
+            std::string("/data/data/app.polarbear/files/archlinux-aarch64/tmp/") + socket_name;
+    int sock_fd = create_unix_socket(socket_path);
+    if (sock_fd < 0) {
+        LOGI("Failed to create Unix socket.");
+        return nullptr;
+    }
+
+    if (wl_display_add_socket_fd(wl_display, sock_fd) < 0) {
+        LOGI("Unable to add socket to Wayland display.");
+        close_unix_socket(sock_fd);
+        return nullptr;
+    }
+
+    return wl_display;
+}
+
+const char *implement(void (*render)(wl_shm_buffer *)) {
+    auto socket_name = "wayland-pb";
+    auto wl_display = setup_compositor(socket_name);
+
     pb_global.display = wl_display;
     pb_global.render = render;
     // Compositor
@@ -369,6 +413,12 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
 
                 wl_resource_set_implementation(resource, &seat_impl, nullptr,
                                                nullptr);
+
+
+                if (version >= WL_SEAT_NAME_SINCE_VERSION)
+                    wl_seat_send_name(resource, "Polar Bear Virtual Input");
+
+                wl_seat_send_capabilities(resource, WL_SEAT_CAPABILITY_TOUCH);
             });
 
     // SHM
@@ -383,4 +433,51 @@ void implement(wl_display *wl_display, void (*render)(wl_shm_buffer *)) {
              message->resource->object.interface->version, message->message->name);
     }, nullptr);
 
+    return socket_name;
+}
+
+void run() {
+    LOGI("Running Wayland display...");
+
+    wl_display_run(pb_global.display);
+    wl_display_destroy(pb_global.display);
+}
+
+void handle_event(TouchEventData event) {
+    if (pb_global.touch == nullptr) {
+        return;
+    }
+
+    // Convert coordinates to wl_fixed_t format
+    wl_fixed_t x_fixed = wl_fixed_from_double(static_cast<double>(event.x));
+    wl_fixed_t y_fixed = wl_fixed_from_double(static_cast<double>(event.y));
+
+    // Define constants for motion events (matching Android's MotionEvent constants)
+    const int ACTION_DOWN = 0;
+    const int ACTION_UP = 1;
+    const int ACTION_MOVE = 2;
+
+    // Serial number, incremented with each unique event
+    static uint32_t serial = 1;
+    serial++;
+
+    // Check the action type and call the corresponding wl_touch_* function
+    switch (event.action) {
+        case ACTION_DOWN:
+            wl_touch_send_down(pb_global.touch, serial, event.timestamp, pb_global.xdg_surface, event.pointerId,
+                               x_fixed, y_fixed);
+            break;
+
+        case ACTION_UP:
+            wl_touch_send_up(pb_global.touch, serial, event.timestamp, event.pointerId);
+            break;
+
+        case ACTION_MOVE:
+            wl_touch_send_motion(pb_global.touch, event.timestamp, event.pointerId, x_fixed,
+                                 y_fixed);
+            break;
+    }
+
+    // Send a frame event after each touch sequence to signal the end of this touch event group
+    wl_touch_send_frame(pb_global.touch);
 }

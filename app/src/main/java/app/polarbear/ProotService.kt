@@ -13,6 +13,9 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import app.polarbear.utils.checkAndPacstrap
 import app.polarbear.utils.process
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.OutputStreamWriter
 
 class ProotService : Service() {
@@ -27,11 +30,18 @@ class ProotService : Service() {
     }
 
     private val logLines = ArrayDeque<String>(20) // Store the latest 20 log lines
+    private val _logFlow = MutableSharedFlow<List<String>>(replay = 1)
+    val logFlow: SharedFlow<List<String>> = _logFlow.asSharedFlow()
+
     private var stdin: OutputStreamWriter? = null
     private val binder = LocalBinder()
 
     inner class LocalBinder : Binder() {
         fun getService(): ProotService = this@ProotService
+    }
+
+    override fun onBind(intent: Intent?): IBinder {
+        return binder
     }
 
     override fun onCreate() {
@@ -110,11 +120,12 @@ class ProotService : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder {
-        return binder
-    }
 
     private fun createNotification(): Notification {
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
+            flags =
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        }
         val stopIntent = Intent(this, ProotService::class.java).apply { action = ACTION_STOP }
         val killIntent = Intent(this, ProotService::class.java).apply { action = ACTION_KILL }
         val logsIntent = Intent(this, ProotService::class.java).apply { action = ACTION_LOGS }
@@ -139,9 +150,16 @@ class ProotService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Long Running Job")
-            .setContentText("Job is running...")
+            .setContentTitle("Arch Linux is running in the background.")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    contentIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
             .addAction(android.R.drawable.ic_menu_delete, "Kill", killPendingIntent)
             .addAction(android.R.drawable.ic_menu_info_details, "Logs", logsPendingIntent)
@@ -152,9 +170,11 @@ class ProotService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Long Running Job Channel",
-                NotificationManager.IMPORTANCE_LOW
-            )
+                "Linux Background Service",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications for Arch Linux is running in the background."
+            }
             val notificationManager =
                 getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
@@ -167,10 +187,8 @@ class ProotService : Service() {
             logLines.removeFirst() // Remove the oldest line
         }
         logLines.addLast(line) // Add new log line
-    }
 
-    fun getLogs(): List<String> {
-        return logLines.toList() // Return logs as a list
+        _logFlow.tryEmit(logLines.toList()) // Emit the current log list
     }
 
     fun flush(command: String) {

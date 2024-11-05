@@ -459,7 +459,6 @@ void handle_event(TouchEventData event) {
 
     // Serial number, incremented with each unique event
     static uint32_t serial = 1;
-    serial++;
 
     // Check the action type and call the corresponding wl_touch_* function
     switch (event.action) {
@@ -470,6 +469,7 @@ void handle_event(TouchEventData event) {
 
         case ACTION_UP:
             wl_touch_send_up(pb_global.touch, serial, event.timestamp, event.pointerId);
+            serial++;
             break;
 
         case ACTION_MOVE:

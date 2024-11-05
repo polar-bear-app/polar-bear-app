@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.ComponentActivity
@@ -58,7 +57,7 @@ import kotlin.math.min
 class MainActivity : ComponentActivity() {
     private val nativeLib = NativeLib()
 
-    private var serviceBound = false
+    private var serviceBound by mutableStateOf(false)
     private var prootService: ProotService? = null
     private var panelOffset by mutableStateOf(0f) // This will control the offset of the panel
     private var panelWidth by mutableStateOf(0.dp) // This will store the width of the panel
@@ -79,10 +78,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        Intent(this, ProotService::class.java).also {
-            startService(it)
-            bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
-        }
 
         setContent {
             // Set the panel width based on screen width
@@ -111,10 +106,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun proot(command: String) {
-        val intent = Intent(this, ProotService::class.java).apply {
-            putExtra("command", command)
+        Intent(this, ProotService::class.java).also {
+            it.putExtra("command", command)
+            startService(it)
+            bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
         }
-        startForegroundService(intent)
     }
 
     @Composable
@@ -184,9 +180,11 @@ class MainActivity : ComponentActivity() {
         val logs = remember { mutableStateOf(emptyList<String>()) }
         val scrollState = rememberScrollState()
 
-        LaunchedEffect(Unit) {
-            prootService!!.logFlow.collect { newLogs ->
-                logs.value = newLogs // Update logs
+        LaunchedEffect(serviceBound) {
+            if (serviceBound) {
+                prootService?.logFlow?.collect { newLogs ->
+                    logs.value = newLogs // Update logs
+                }
             }
         }
 
@@ -304,7 +302,8 @@ class MainActivity : ComponentActivity() {
                         override fun surfaceCreated(holder: SurfaceHolder) {
                             // Surface is ready for drawing, access the Surface via holder.surface
                             val display = nativeLib.start(holder.surface);
-                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
+//                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
+                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client weston")
                         }
 
                         override fun surfaceChanged(

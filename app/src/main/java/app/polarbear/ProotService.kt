@@ -34,6 +34,7 @@ class ProotService : Service() {
 
     private var stdin: OutputStreamWriter? = null
     private val binder = LocalBinder()
+    private var isStarted = false
 
     inner class LocalBinder : Binder() {
         fun getService(): ProotService = this@ProotService
@@ -57,28 +58,31 @@ class ProotService : Service() {
             }
 
             else -> {
-                val command = intent?.getStringExtra("command") // Retrieve the command
+                if (!isStarted) {
+                    isStarted = true
 
-                checkAndPacstrap(this, { addLogLine(it) }) {
-                    val appInfo = this.applicationInfo
-                    val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
-                    process(
-                        listOf(
-                            appInfo.nativeLibraryDir + "/proot.so",
-                            "-r", rootFs,
-                            "-L",
-                            "--link2symlink",
-                            "--kill-on-exit",
-                            "--root-id",
-                            "--cwd=/root",
-                            "--bind=/dev",
+                    val command = intent?.getStringExtra("command") // Retrieve the command
+
+                    checkAndPacstrap(this, { addLogLine(it) }) {
+                        val appInfo = this.applicationInfo
+                        val rootFs = appInfo.dataDir + "/files/archlinux-aarch64"
+                        process(
+                            listOf(
+                                appInfo.nativeLibraryDir + "/proot.so",
+                                "-r", rootFs,
+                                "-L",
+                                "--link2symlink",
+                                "--kill-on-exit",
+                                "--root-id",
+                                "--cwd=/root",
+                                "--bind=/dev",
 //                "--bind=\"/dev/urandom:/dev/random\"",
-                            "--bind=/proc",
+                                "--bind=/proc",
 //                "--bind=\"/proc/self/fd:/dev/fd\"",
 //                "--bind=\"/proc/self/fd/0:/dev/stdin\"",
 //                "--bind=\"/proc/self/fd/1:/dev/stdout\"",
 //                "--bind=\"/proc/self/fd/2:/dev/stderr\"",
-                            "--bind=/sys",
+                                "--bind=/sys",
 //                "--bind=\"${rootFs}/proc/.loadavg:/proc/loadavg\"",
 //                "--bind=\"${rootFs}/proc/.stat:/proc/stat\"",
 //                "--bind=\"${rootFs}/proc/.uptime:/proc/uptime\"",
@@ -86,25 +90,26 @@ class ProotService : Service() {
 //                "--bind=\"${rootFs}/proc/.vmstat:/proc/vmstat\"",
 //                "--bind=\"${rootFs}/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap\"",
 //                "--bind=\"${rootFs}/sys/.empty:/sys/fs/selinux\"",
-                            "/usr/bin/env", "-i",
-                            "\"HOME=/root\"",
-                            "\"LANG=C.UTF-8\"",
-                            "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
-                            "\"TERM=\${TERM-xterm-256color}\"",
-                            "\"TMPDIR=/tmp\"",
-                            "/bin/sh"
-                        ), environment = mapOf(
-                            "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
-                            "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
-                        ), output = { addLogLine(it) }, input = {
-                            this.stdin = it.writer()
-                            if (command != null) {
-                                this.flush(command)
-                            } else {
-                                this.flush("uname -a")
+                                "/usr/bin/env", "-i",
+                                "\"HOME=/root\"",
+                                "\"LANG=C.UTF-8\"",
+                                "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+                                "\"TERM=\${TERM-xterm-256color}\"",
+                                "\"TMPDIR=/tmp\"",
+                                "/bin/sh"
+                            ), environment = mapOf(
+                                "PROOT_LOADER" to appInfo.nativeLibraryDir + "/loader.so",
+                                "PROOT_TMP_DIR" to appInfo.dataDir + "/files/archlinux-aarch64",
+                            ), output = { addLogLine(it) }, input = {
+                                this.stdin = it.writer()
+                                if (command != null) {
+                                    this.flush(command)
+                                } else {
+                                    this.flush("uname -a")
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -123,7 +128,8 @@ class ProotService : Service() {
 
         val logsIntent = Intent(this, MainActivity::class.java).apply {
             action = ACTION_LOGS // Set action to indicate logs should be shown
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK // Use the same flags as contentIntent
+            flags =
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK // Use the same flags as contentIntent
         }
 
         val stopPendingIntent = PendingIntent.getService(
@@ -184,5 +190,10 @@ class ProotService : Service() {
     fun flush(command: String) {
         this.stdin?.appendLine(command)
         this.stdin?.flush()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        isStarted = false
     }
 }

@@ -55,8 +55,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
-    private val nativeLib = NativeLib()
-
     private var serviceBound by mutableStateOf(false)
     private var prootService: ProotService? = null
     private var panelOffset by mutableStateOf(0f) // This will control the offset of the panel
@@ -77,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
 
         setContent {
@@ -95,6 +94,11 @@ class MainActivity : ComponentActivity() {
         if (intent.action == ProotService.ACTION_LOGS) {
             revealRightPanel() // Call the function to reveal the right panel
         }
+        
+        Intent(this, ProotService::class.java).also {
+            startService(it)
+            bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
+        }
     }
 
     override fun onStop() {
@@ -102,14 +106,6 @@ class MainActivity : ComponentActivity() {
         if (serviceBound) {
             unbindService(serviceConnection)
             serviceBound = false
-        }
-    }
-
-    private fun proot(command: String) {
-        Intent(this, ProotService::class.java).also {
-            it.putExtra("command", command)
-            startService(it)
-            bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
         }
     }
 
@@ -263,9 +259,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) {
-                    WaylandDisplay {
-                        proot(it)
-                    }
+                    WaylandDisplay()
                     // Right panel, constant width with animated x-axis offset
                     Box(
                         modifier = Modifier
@@ -284,7 +278,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun WaylandDisplay(render: (String) -> Unit) {
+    fun WaylandDisplay() {
 
         AndroidView(
             factory = { context ->
@@ -293,7 +287,7 @@ class MainActivity : ComponentActivity() {
                     setOnTouchListener { view, event ->
                         // Handle touch events here
                         val data = motionEventToData(event, view)
-                        nativeLib.sendTouchEvent(data)
+                        NativeLib.sendTouchEvent(data)
                         performClick() // click and pointer events should be handled differently
                         true // Return true to indicate the event was handled
                     }
@@ -301,9 +295,7 @@ class MainActivity : ComponentActivity() {
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
                             // Surface is ready for drawing, access the Surface via holder.surface
-                            val display = nativeLib.start(holder.surface);
-//                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland")
-                            render("HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client weston")
+                            NativeLib.setSurface(holder.surface);
                         }
 
                         override fun surfaceChanged(

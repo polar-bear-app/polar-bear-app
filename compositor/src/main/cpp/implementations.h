@@ -7,7 +7,7 @@
 #ifndef POLARBEAR_IMPLEMENTATIONS_H
 #define POLARBEAR_IMPLEMENTATIONS_H
 
-const char* implement(void (*render)(wl_shm_buffer *));
+std::string implement(void (*render)(wl_shm_buffer *));
 
 void run();
 

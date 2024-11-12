@@ -63,5 +63,7 @@ int64_t timespec_to_msec(const struct timespec *a) {
 }
 
 uint32_t get_current_timestamp() {
-    return static_cast<uint32_t>(clock() * 1000 / CLOCKS_PER_SEC);
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint32_t>(ts.tv_sec) * 1000 + static_cast<uint32_t>(ts.tv_nsec / 1000000);
 }

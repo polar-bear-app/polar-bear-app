@@ -16,6 +16,7 @@ COMMAND="mkdir \"\$ANDROID_NDK_HOME/local\" \
      && meson setup build/ --cross-file ../wayland-crossfile.txt -Ddocumentation=false -Dscanner=false \
      && ninja -C build/ \
      && file /wayland/build/src/libwayland-server.so \
+     && cd / \
      && wayland-scanner server-header < wayland-protocols/stable/xdg-shell/xdg-shell.xml > wayland/build/src/xdg-shell.h \
      && wayland-scanner private-code < wayland-protocols/stable/xdg-shell/xdg-shell.xml > wayland/build/src/xdg-shell.c
 "
@@ -25,5 +26,5 @@ docker run -it --rm \
     -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/wayland-crossfile.txt:/wayland-crossfile.txt \
     -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/libffi:/libffi \
     -v /Users/teddy/Desktop/github/polar-bear-app/compositor/src/main/cpp/wayland-protocols:/wayland-protocols \
-    wayland-builder \
+    polar-bear-cross-compiler \
     /bin/bash -c "$COMMAND"

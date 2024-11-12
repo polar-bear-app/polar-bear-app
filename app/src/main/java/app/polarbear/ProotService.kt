@@ -11,6 +11,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import app.polarbear.compositor.NativeLib
 import app.polarbear.utils.checkAndPacstrap
 import app.polarbear.utils.process
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -61,7 +62,11 @@ class ProotService : Service() {
                 if (!isStarted) {
                     isStarted = true
 
-                    val command = intent?.getStringExtra("command") // Retrieve the command
+                    val display = NativeLib.start();
+
+                    // val command = "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
+                    val command =
+                        "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client weston --debug"
 
                     checkAndPacstrap(this, { addLogLine(it) }) {
                         val appInfo = this.applicationInfo

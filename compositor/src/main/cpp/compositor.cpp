@@ -13,11 +13,15 @@
 #define LOG_TAG "PolarBearCompositor"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-JNIEnv *globalEnv;
-JavaVM *globalVM;
-jobject globalSurface;
+static JNIEnv *globalEnv;
+static JavaVM *globalVM;
+static jobject globalSurface;
 
 void render_buffer(struct wl_shm_buffer *waylandBuffer) {
+    if (globalSurface == nullptr) {
+        return;
+    }
+
     // Convert the Surface (jobject) to ANativeWindow
     ANativeWindow *androidNativeWindow = ANativeWindow_fromSurface(globalEnv, globalSurface);
     wl_shm_buffer_begin_access(waylandBuffer);
@@ -59,10 +63,7 @@ void render_buffer(struct wl_shm_buffer *waylandBuffer) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_app_polarbear_compositor_NativeLib_start(
-        JNIEnv *env,
-        jobject /* this */,
-        jobject surface) {
-    globalSurface = env->NewGlobalRef(surface);
+        JNIEnv *env, jclass clazz) {
 
     auto socket_name = implement(render_buffer);
 
@@ -74,13 +75,24 @@ Java_app_polarbear_compositor_NativeLib_start(
         globalVM->DetachCurrentThread();
     });
     compositor_thread.detach();
-
-    return env->NewStringUTF(socket_name);
+    return env->NewStringUTF(socket_name.c_str());
 }
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jobject thiz, jobject event) {
+Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jclass clazz,
+                                                                      jobject event) {
     auto data = convertToTouchEventData(env, event);
     handle_event(data);
+}
+extern "C"
+JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_setSurface(JNIEnv *env, jclass clazz,
+                                                                  jobject surface) {
+    // Delete the old global reference and update with the new surface reference
+    if (globalSurface != nullptr) {
+        env->DeleteGlobalRef(globalSurface);
+    }
+    globalSurface = env->NewGlobalRef(surface);
+
 }

@@ -17,8 +17,10 @@ static JNIEnv *globalEnv;
 static JavaVM *globalVM;
 static jobject globalSurface;
 
-void render_buffer(struct wl_shm_buffer *waylandBuffer) {
-    if (globalSurface == nullptr) {
+void render_buffer(struct wl_shm_buffer *waylandBuffer)
+{
+    if (globalSurface == nullptr)
+    {
         return;
     }
 
@@ -36,17 +38,19 @@ void render_buffer(struct wl_shm_buffer *waylandBuffer) {
     // Step 3: Configure the native window.
     ANativeWindow_setBuffersGeometry(androidNativeWindow, width, height,
                                      format == WL_SHM_FORMAT_ARGB8888
-                                     ? AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
-                                     : AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+                                         ? AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
+                                         : AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
 
     // Step 4: Lock the native window buffer for writing.
     ANativeWindow_Buffer buffer;
-    if (ANativeWindow_lock(androidNativeWindow, &buffer, nullptr) == 0) {
+    if (ANativeWindow_lock(androidNativeWindow, &buffer, nullptr) == 0)
+    {
         // Step 5: Copy the data from the Wayland buffer to the native window buffer.
         uint8_t *dest = static_cast<uint8_t *>(buffer.bits);
         uint8_t *src = static_cast<uint8_t *>(waylandData);
 
-        for (int y = 0; y < height; y++) {
+        for (int y = 0; y < height; y++)
+        {
             memcpy(dest, src, width * 4); // 4 bytes per pixel for RGBX_8888.
             dest += buffer.stride * 4;    // Move to the next line in the native buffer.
             src += stride;                // Move to the next line in the Wayland buffer.
@@ -60,39 +64,39 @@ void render_buffer(struct wl_shm_buffer *waylandBuffer) {
     wl_shm_buffer_end_access(waylandBuffer);
 }
 
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_app_polarbear_compositor_NativeLib_start(
-        JNIEnv *env, jclass clazz) {
+    JNIEnv *env, jclass clazz)
+{
 
     auto socket_name = implement(render_buffer);
 
     env->GetJavaVM(&globalVM);
-    std::thread compositor_thread([]() {
+    std::thread compositor_thread([]()
+                                  {
         globalVM->AttachCurrentThread(&globalEnv, nullptr);
         run();
         globalEnv->DeleteGlobalRef(globalSurface);
-        globalVM->DetachCurrentThread();
-    });
+        globalVM->DetachCurrentThread(); });
     compositor_thread.detach();
     return env->NewStringUTF(socket_name.c_str());
 }
 
-extern "C"
-JNIEXPORT void JNICALL
+extern "C" JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jclass clazz,
-                                                                      jobject event) {
+                                                       jobject event)
+{
     auto data = convertToTouchEventData(env, event);
     handle_event(data);
 }
-extern "C"
-JNIEXPORT void JNICALL
+extern "C" JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_setSurface(JNIEnv *env, jclass clazz,
-                                                                  jobject surface) {
+                                                   jobject surface)
+{
     // Delete the old global reference and update with the new surface reference
-    if (globalSurface != nullptr) {
+    if (globalSurface != nullptr)
+    {
         env->DeleteGlobalRef(globalSurface);
     }
     globalSurface = env->NewGlobalRef(surface);
-
 }

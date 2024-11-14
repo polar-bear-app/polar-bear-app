@@ -55,21 +55,21 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
+    private var mainService: MainService? = null
     private var serviceBound by mutableStateOf(false)
-    private var prootService: ProotService? = null
     private var panelOffset by mutableStateOf(0f) // This will control the offset of the panel
     private var panelWidth by mutableStateOf(0.dp) // This will store the width of the panel
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
-            val binder = service as ProotService.LocalBinder
-            prootService = binder.getService()
+            val binder = service as MainService.LocalBinder
+            mainService = binder.getService()
             serviceBound = true
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
             serviceBound = false
-            prootService = null
+            mainService = null
         }
     }
 
@@ -91,11 +91,11 @@ class MainActivity : ComponentActivity() {
         }
 
         // Handle intent on initial launch
-        if (intent.action == ProotService.ACTION_LOGS) {
+        if (intent.action == MainService.ACTION_LOGS) {
             revealRightPanel() // Call the function to reveal the right panel
         }
-        
-        Intent(this, ProotService::class.java).also {
+
+        Intent(this, MainService::class.java).also {
             startService(it)
             bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
         }
@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 openAlertDialog.value = false
                                 // Handle the user input here
-                                prootService!!.flush(
+                                mainService!!.flush(
                                     """
                                         ${userInput.value}
                                         echo '# '
@@ -178,7 +178,7 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(serviceBound) {
             if (serviceBound) {
-                prootService?.logFlow?.collect { newLogs ->
+                mainService?.logFlow?.collect { newLogs ->
                     logs.value = newLogs // Update logs
                 }
             }
@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent) // Set the new intent to access it later
 
-        if (intent?.action == ProotService.ACTION_LOGS) {
+        if (intent?.action == MainService.ACTION_LOGS) {
             revealRightPanel() // Call the function to reveal the right panel
         }
     }

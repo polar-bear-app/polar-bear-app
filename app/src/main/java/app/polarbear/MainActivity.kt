@@ -295,7 +295,6 @@ class MainActivity : ComponentActivity() {
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
                             // Surface is ready for drawing, access the Surface via holder.surface
-                            NativeLib.setSurface(holder.surface);
                         }
 
                         override fun surfaceChanged(

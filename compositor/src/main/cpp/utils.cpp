@@ -3,15 +3,20 @@
 //
 
 #include <string>
+#include <vector>
+
+#include <jni.h>
 #include <unistd.h>
-#include <android/log.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <android/log.h>
 
 #define LOG_TAG "PolarBearCompositorUtils"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-int create_unix_socket(const std::string &socket_path) {
+using namespace std;
+
+int create_unix_socket(const string &socket_path) {
     int sock_fd;
     struct sockaddr_un addr;
 
@@ -66,4 +71,24 @@ uint32_t get_current_timestamp() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<uint32_t>(ts.tv_sec) * 1000 + static_cast<uint32_t>(ts.tv_nsec / 1000000);
+}
+
+string jstringToString(JNIEnv *env, jstring jStr) {
+    if (!jStr) {
+        return ""; // Return an empty string if the jstring is null
+    }
+
+    // Convert the jstring to a UTF-8 C-style string
+    const char *chars = env->GetStringUTFChars(jStr, nullptr);
+    if (!chars) {
+        return ""; // Return an empty string if the conversion fails
+    }
+
+    // Copy the C-style string into a string
+    string result(chars);
+
+    // Release the UTF-8 C-style string
+    env->ReleaseStringUTFChars(jStr, chars);
+
+    return result;
 }

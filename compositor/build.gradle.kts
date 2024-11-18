@@ -18,6 +18,7 @@ android {
             }
         }
 
+        ndkVersion = "28.0.12433566"
         ndk {
             abiFilters.add("arm64-v8a")
         }

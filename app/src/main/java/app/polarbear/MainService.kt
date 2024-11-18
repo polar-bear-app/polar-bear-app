@@ -11,37 +11,39 @@ import android.os.Binder
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import app.polarbear.compositor.NativeLib
+import app.polarbear.utils.SafeToRetryException
 import app.polarbear.utils.process
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
 import java.io.OutputStreamWriter
+import kotlin.concurrent.thread
 
 class MainService : Service() {
 
     companion object {
+        const val DISPLAY = "wayland-pb"
         const val CHANNEL_ID = "ProotChannel"
         const val NOTIFICATION_ID = 1
-
         const val ACTION_STOP = "ACTION_STOP"
         const val ACTION_LOGS = "ACTION_LOGS"
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val logLines = ArrayDeque<String>(20) // Store the latest 20 log lines
-    private val _logFlow = MutableSharedFlow<List<String>>(replay = 1)
+    private val _logFlow = MutableStateFlow<List<String>>(emptyList())
     private var stdin: OutputStreamWriter? = null
     private val binder = LocalBinder()
     private var isStarted = false
+    private lateinit var fsRoot: File
 
-    val logFlow: SharedFlow<List<String>> = _logFlow.asSharedFlow()
+    val logFlow: StateFlow<List<String>> = _logFlow // Expose a StateFlow to the outside
 
     inner class LocalBinder : Binder() {
         fun getService(): MainService = this@MainService
@@ -55,6 +57,7 @@ class MainService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
+        fsRoot = File(applicationContext.filesDir, "archlinux-aarch64");
     }
 
     override fun onDestroy() {
@@ -138,13 +141,13 @@ class MainService : Service() {
      * Write a line of log to the log buffer.
      */
     private fun addLogLine(line: String) {
+        val logLines = _logFlow.value.toMutableList()
         // Maintain only the latest 20 lines
         if (logLines.size >= 20) {
-            logLines.removeFirst() // Remove the oldest line
+            logLines.removeAt(0) // Remove the oldest line
         }
-        logLines.addLast(line) // Add new log line
-
-        _logFlow.tryEmit(logLines.toList()) // Emit the current log list
+        logLines.add(line) // Add new log line
+        _logFlow.value = logLines
     }
 
     /**
@@ -164,13 +167,24 @@ class MainService : Service() {
             pacstrap()
 
             // Step 2. Start the Wayland server in C++ code
-            val display = NativeLib.start()
+            thread {
+                NativeLib.start(DISPLAY)
+            }
 
-            // Step 3. Start the Wayland compositor in proot (the compositor must support Wayland backend option).
-            // val command = "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
+            // Step 3. Install plasma desktop
+            installDependencies()
+
+            // Step 4. Start the Wayland compositor in proot (the compositor must support Wayland backend option).
+//            val command =
+//                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
             val command =
-                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client weston --debug"
-            execute(command)
+                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client weston --renderer=pixman --fullscreen"
+            execute(command, returnOnExit = false)
+        } catch (error: SafeToRetryException) {
+            addLogLine("*** *** ***")
+            addLogLine("POLAR BEAR SETUP INTERRUPTED!")
+            addLogLine("${error.message}")
+            addLogLine("*** *** ***")
         } catch (error: Exception) {
             addLogLine("*** *** ***")
             addLogLine("POLAR BEAR CRASHED!")
@@ -179,13 +193,19 @@ class MainService : Service() {
             addLogLine("$error")
             addLogLine("Thank you for your support to improve our app.")
             addLogLine("*** *** ***")
+        } finally {
+            stopSelf()
         }
     }
 
     /**
      * Start any command in the proot environment. Typically, we will start a Wayland compositor here.
      */
-    private suspend fun execute(command: String) {
+    private suspend fun execute(
+        command: String,
+        returnOnExit: Boolean = true,
+        ignoreLogs: Boolean = false
+    ) {
         val prootBin = "${this.applicationInfo.nativeLibraryDir}/proot.so"
         val rootFs = "${this.applicationInfo.dataDir}/files/archlinux-aarch64"
         process(
@@ -217,16 +237,45 @@ class MainService : Service() {
                 "\"LANG=C.UTF-8\"",
                 "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
                 "\"TERM=\${TERM-xterm-256color}\"",
-                "\"TMPDIR=/tmp\"",
-                "/bin/sh"
-            ), environment = mapOf(
+                "\"TMPDIR=/tmp\""
+            ) + if (returnOnExit) {
+                command.split(" ")
+            } else {
+                listOf("/bin/sh")
+            },
+            environment = mapOf(
                 "PROOT_LOADER" to this.applicationInfo.nativeLibraryDir + "/loader.so",
                 "PROOT_TMP_DIR" to this.applicationInfo.dataDir + "/files/archlinux-aarch64",
-            ), output = { addLogLine(it) }, input = {
-                this.stdin = it.writer()
-                this.flush(command)
+            ), output = {
+                if (!ignoreLogs) {
+                    addLogLine(it)
+                }
+            }, input = {
+                if (!returnOnExit) {
+                    this.stdin = it.writer()
+                    this.flush(command)
+                }
             }
         )
+    }
+
+    private suspend fun installDependencies() {
+        var isPlasmaInstalled = true
+        try {
+            execute("pacman -Qg plasma", ignoreLogs = true)
+        } catch (e: Exception) {
+            isPlasmaInstalled = false
+            addLogLine("Plasma is not installed. Proceeding with installation...")
+        }
+        if (!isPlasmaInstalled) {
+            val pacmanLock = fsRoot.resolve("var/lib/pacman/db.lck")
+            pacmanLock.delete(); // Previous installation could have failed, so delete the lock file before trying again
+            try {
+                execute("pacman -Syu plasma --noconfirm")
+            } catch (e: Exception) {
+                throw SafeToRetryException("An error occurred while installing the desktop environment using the Arch package manager. If the issue was related to network connectivity, it is safe to retry the installation once you have a stable network connection by reopening the app until it succeeds.")
+            }
+        }
     }
 
     /**
@@ -240,10 +289,9 @@ class MainService : Service() {
                 applicationContext.cacheDir,
                 "arch.tar"
             )  // Temporary file to store the extracted tar
-        val destinationFolder = File(applicationContext.filesDir, "archlinux-aarch64");
         // Pacstrap when there is no fs or the temp file is still there (the extraction progress wasn't finished)
         var shouldPacstrap = false
-        if (!destinationFolder.exists() || destinationFolder.listFiles().isNullOrEmpty()) {
+        if (!fsRoot.exists() || fsRoot.listFiles().isNullOrEmpty()) {
             shouldPacstrap = true
             addLogLine("Arch Linux is not installed! Installing...")
         } else if (tempTarFile.exists()) {
@@ -253,7 +301,7 @@ class MainService : Service() {
         if (shouldPacstrap) {
             addLogLine("(This may take a few minutes.)")
 
-            destinationFolder.deleteRecursively()
+            fsRoot.deleteRecursively()
 
             if (!tempTarFile.exists()) {
                 // Copy the asset to the cache directory to use with tar
@@ -276,16 +324,11 @@ class MainService : Service() {
                 "-f",
                 tempTarFile.absolutePath,  // Path to the tar.gz file
                 "-C",
-                destinationFolder.parentFile!!.absolutePath  // Specify the destination directory
+                fsRoot.parentFile!!.absolutePath  // Specify the destination directory
             )
 
             process(command, output = { addLogLine(it) })
             tempTarFile.delete()
-        }
-
-        val shouldInstallPackages = shouldPacstrap
-        if (shouldInstallPackages) {
-            execute("pacman -Syu weston --noconfirm")
         }
     }
 }

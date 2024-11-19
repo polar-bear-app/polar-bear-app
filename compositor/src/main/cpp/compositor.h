@@ -8,9 +8,10 @@
 
 using namespace std;
 
-string implement(const string& socket_name);
+string implement(const string &socket_name);
 
-void run(const function<void(const string&, const vector<string>&)>& callJVM);
+void run(const function<string(const string &, const vector<string> &)> &callJVM);
 
-void handle_event(TouchEventData event);
+void set_surface(uint32_t id, ANativeWindow *pWindow);
 
+void handle_event(uint32_t surface_id, TouchEventData event);

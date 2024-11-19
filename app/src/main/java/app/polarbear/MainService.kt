@@ -1,5 +1,6 @@
 package app.polarbear
 
+import android.R
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,8 +10,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import android.util.Log
+import androidx.compose.runtime.mutableStateListOf
 import androidx.core.app.NotificationCompat
 import app.polarbear.compositor.NativeLib
+import app.polarbear.data.SurfaceData
 import app.polarbear.utils.SafeToRetryException
 import app.polarbear.utils.process
 import kotlinx.coroutines.CoroutineScope
@@ -20,11 +24,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
 import java.io.OutputStreamWriter
+import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class MainService : Service() {
 
@@ -41,8 +47,11 @@ class MainService : Service() {
     private var stdin: OutputStreamWriter? = null
     private val binder = LocalBinder()
     private var isStarted = false
+    private val compositorReadyLatch = CountDownLatch(1)
     private lateinit var fsRoot: File
 
+    val nativeLib = NativeLib(this::handleJNICallback)
+    val surfaceList = mutableStateListOf<SurfaceData>()
     val logFlow: StateFlow<List<String>> = _logFlow // Expose a StateFlow to the outside
 
     inner class LocalBinder : Binder() {
@@ -110,7 +119,7 @@ class MainService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Arch Linux is running in the background.")
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(R.drawable.ic_menu_info_details)
             .setContentIntent(
                 PendingIntent.getActivity(
                     this,
@@ -119,8 +128,8 @@ class MainService : Service() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
-            .addAction(android.R.drawable.ic_menu_info_details, "Logs", logsPendingIntent)
+            .addAction(R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
+            .addAction(R.drawable.ic_menu_info_details, "Logs", logsPendingIntent)
             .build()
     }
 
@@ -133,7 +142,7 @@ class MainService : Service() {
             description = "Notifications for Arch Linux is running in the background."
         }
         val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 
@@ -166,15 +175,21 @@ class MainService : Service() {
             // Step 1. Install Linux FS (if not existed)
             pacstrap()
 
-            // Step 2. Start the Wayland server in C++ code
-            thread {
-                NativeLib.start(DISPLAY)
-            }
-
-            // Step 3. Install plasma desktop
+            // Step 2. Install plasma desktop
             installDependencies()
 
-            // Step 4. Start the Wayland compositor in proot (the compositor must support Wayland backend option).
+            // Step 3. Start the Wayland server in C++ code
+            thread {
+                nativeLib.start(DISPLAY)
+            }
+
+            // Step 4. Wait for the compositor finished setup
+            suspendCoroutine {
+                compositorReadyLatch.await()
+                it.resume(Unit)
+            }
+
+            // Step 5. Start the Wayland compositor in proot (the compositor must support Wayland backend option).
 //            val command =
 //                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
             val command =
@@ -331,4 +346,42 @@ class MainService : Service() {
             tempTarFile.delete()
         }
     }
+
+
+    private fun handleJNICallback(request: String, vararg args: String): String? {
+        try {
+            // Get the method dynamically
+            val method = this::class.java.getDeclaredMethod(request, Array<String>::class.java)
+
+            // Make the method accessible
+            method.isAccessible = true
+
+            // Call the method dynamically with arguments
+            val result = method.invoke(this, args)
+
+            // Ensure the result is a String
+            require(result is String?) { "Expected return type String, but got ${result?.javaClass?.name}" }
+
+            // Return it to the JNI caller
+            return result
+        } catch (e: Exception) {
+            addLogLine(e.toString())
+            return null
+        }
+    }
+
+    /**
+     * JNI Callbacks
+     */
+    private fun createSurface(vararg args: String) {
+        val id = args.first().toInt()
+        this.surfaceList.add(
+            SurfaceData(id)
+        )
+    }
+
+    private fun ready(vararg args: String) {
+        compositorReadyLatch.countDown()
+    }
+
 }

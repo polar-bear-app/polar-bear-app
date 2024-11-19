@@ -8,6 +8,8 @@
 #include <jni.h>
 #include <unistd.h>
 #include <android/log.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
 #include <sys/socket.h>
 
 #include "wayland-server.h"
@@ -20,20 +22,71 @@
 
 using namespace std;
 
-struct PolarBearGlobal {
+struct PolarBearSurface {
+    ANativeWindow *androidNativeWindow;
+    wl_resource *resource;
+    wl_shm_buffer *waylandBuffer;
+};
+
+struct PolarBearState {
+    unordered_map<uint32_t, PolarBearSurface> surfaces;
+    function<void(const string &, const vector<string> &)> callJVM;
+
+    // to be structured
     wl_display *display;
-    wl_shm_buffer *buffer;
     wl_resource *output;
-    wl_resource *surface;
     wl_resource *xdg_surface;
     wl_resource *xdg_toplevel_surface;
     wl_resource *pointer;
     wl_resource *touch;
-
-    function<void(const string &, const vector<string> &)> callJVM;
 };
 
-struct PolarBearGlobal pb_global = {nullptr};
+static PolarBearState state;
+
+void render(PolarBearSurface surface) {
+    auto waylandBuffer = surface.waylandBuffer;
+    auto androidNativeWindow = surface.androidNativeWindow;
+
+    if (surface.waylandBuffer == nullptr || surface.androidNativeWindow == nullptr) {
+        return;
+    }
+
+    // Convert the Surface (jobject) to ANativeWindow
+    wl_shm_buffer_begin_access(waylandBuffer);
+
+    // Step 2: Get buffer details.
+    void *waylandData = wl_shm_buffer_get_data(waylandBuffer);
+    int32_t width = wl_shm_buffer_get_width(waylandBuffer);
+    int32_t height = wl_shm_buffer_get_height(waylandBuffer);
+    int32_t stride = wl_shm_buffer_get_stride(waylandBuffer);
+    uint32_t format = wl_shm_buffer_get_format(waylandBuffer);
+
+    // Step 3: Configure the native window.
+    ANativeWindow_setBuffersGeometry(androidNativeWindow, width, height,
+                                     format == WL_SHM_FORMAT_ARGB8888
+                                     ? AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
+                                     : AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+
+    // Step 4: Lock the native window buffer for writing.
+    ANativeWindow_Buffer buffer;
+    if (ANativeWindow_lock(androidNativeWindow, &buffer, nullptr) == 0) {
+        // Step 5: Copy the data from the Wayland buffer to the native window buffer.
+        uint8_t *dest = static_cast<uint8_t *>(buffer.bits);
+        uint8_t *src = static_cast<uint8_t *>(waylandData);
+
+        for (int y = 0; y < height; y++) {
+            memcpy(dest, src, width * 4); // 4 bytes per pixel for RGBX_8888.
+            dest += buffer.stride * 4;    // Move to the next line in the native buffer.
+            src += stride;                // Move to the next line in the Wayland buffer.
+        }
+
+        // Step 6: Unlock and post the buffer to display the content.
+        ANativeWindow_unlockAndPost(androidNativeWindow);
+    }
+
+    // Step 7: End access to the Wayland buffer.
+    wl_shm_buffer_end_access(waylandBuffer);
+}
 
 void send_configures() {
     struct wl_array states;
@@ -41,14 +94,14 @@ void send_configures() {
     uint32_t *s = static_cast<uint32_t *>(wl_array_add(&states,
                                                        sizeof(uint32_t)));
     *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
-    xdg_toplevel_send_configure(pb_global.xdg_toplevel_surface, 1024,
+    xdg_toplevel_send_configure(state.xdg_toplevel_surface, 1024,
                                 768,
                                 &states);
     wl_array_release(&states);
 
-    xdg_surface_send_configure(pb_global.xdg_surface,
+    xdg_surface_send_configure(state.xdg_surface,
                                wl_display_next_serial(
-                                       pb_global.display));
+                                       state.display));
 }
 
 static const struct wl_surface_interface surface_impl = {
@@ -61,7 +114,7 @@ static const struct wl_surface_interface surface_impl = {
                     wl_client_post_no_memory(client);
                     return;
                 }
-                pb_global.buffer = pShmBuffer;
+                state.surfaces[resource->object.id].waylandBuffer = pShmBuffer;
             }
         },
         [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y,
@@ -77,12 +130,7 @@ static const struct wl_surface_interface surface_impl = {
         [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *region) {},
         [](struct wl_client *client, struct wl_resource *resource) {
             LOGI("surface_commit");
-            if (resource->object.id != pb_global.surface->object.id) {
-                LOGI("Something went wrong!");
-            }
-            if (pb_global.buffer != nullptr) {
-//                pb_global.render(pb_global.buffer);
-            }
+            render(state.surfaces[resource->object.id]);
             send_configures();
         },
         [](struct wl_client *client, struct wl_resource *resource, int32_t transform) {},
@@ -107,17 +155,22 @@ static const struct wl_region_interface region_impl = {
 };
 
 static const struct wl_compositor_interface compositor_impl = {
-        .create_surface = [](struct wl_client *client,
-                             struct wl_resource *resource, uint32_t id) {
-            auto surface =
-                    wl_resource_create(client, &wl_surface_interface,
-                                       wl_resource_get_version(resource), id);
-            wl_resource_set_implementation(surface, &surface_impl,
+        .create_surface = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+            PolarBearSurface surface;
+
+            // Wayland protocol logic
+            surface.resource = wl_resource_create(client, &wl_surface_interface,
+                                                  wl_resource_get_version(resource), id);
+            wl_resource_set_implementation(surface.resource, &surface_impl,
                                            nullptr, nullptr);
-            pb_global.callJVM("create_surface", {"args"});
+
+            // Polar Bear logic
+            state.surfaces[id] = surface;
+            state.callJVM("createSurface", {to_string(id)}); // Tell Kotlin to create a SurfaceView
         },
-        .create_region = [](struct wl_client *client,
-                            struct wl_resource *resource, uint32_t id) {
+        .
+        create_region = [](struct wl_client *client,
+                           struct wl_resource *resource, uint32_t id) {
             auto region =
                     wl_resource_create(client, &wl_region_interface, 1, id);
             if (region == nullptr) {
@@ -191,7 +244,7 @@ static const struct xdg_surface_interface xdg_surface_impl = {
             wl_resource_set_implementation(res, &xdg_toplevel_impl, nullptr,
                                            nullptr);
 
-            pb_global.xdg_toplevel_surface = res;
+            state.xdg_toplevel_surface = res;
         },
 
         [](struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -235,8 +288,7 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
                                                id);
             wl_resource_set_implementation(resource, &xdg_surface_impl, nullptr, nullptr);
 
-            pb_global.xdg_surface = resource;
-            pb_global.surface = wl_surface_resource;
+            state.xdg_surface = resource;
         },
         [](struct wl_client *wl_client, struct wl_resource *resource, uint32_t serial) {
             LOGI("pong");
@@ -277,7 +329,7 @@ static const struct wl_seat_interface seat_impl = {
 
             wl_resource_set_implementation(pointer, &pointer_impl, nullptr,
                                            nullptr);
-            pb_global.pointer = pointer;
+            state.pointer = pointer;
             wl_pointer_send_frame(pointer);
         },
         [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
@@ -288,7 +340,7 @@ static const struct wl_seat_interface seat_impl = {
             wl_resource_set_implementation(touch, &touch_impl,
                                            nullptr, nullptr);
 
-            pb_global.touch = touch;
+            state.touch = touch;
         },
         [](struct wl_client *client, struct wl_resource *resource) {},
 };
@@ -320,7 +372,7 @@ wl_display *setup_compositor(const char *socket_name) {
 string implement(const string &socket_name) {
     auto wl_display = setup_compositor(socket_name.c_str());
 
-    pb_global.display = wl_display;
+    state.display = wl_display;
     // Compositor
     wl_global_create(wl_display, &wl_compositor_interface,
                      wl_compositor_interface.version, nullptr,
@@ -358,7 +410,7 @@ string implement(const string &socket_name) {
                                                         client,
                                                         nullptr);
 
-                         xdg_wm_base_send_ping(resource, wl_display_next_serial(pb_global.display));
+                         xdg_wm_base_send_ping(resource, wl_display_next_serial(state.display));
                      });
 
     // Output
@@ -373,7 +425,7 @@ string implement(const string &socket_name) {
                 wl_resource_set_implementation(resource, &output_impl, nullptr,
                                                nullptr);
 
-                pb_global.output = resource;
+                state.output = resource;
 
                 wl_output_send_geometry(resource,
                                         0,
@@ -438,18 +490,24 @@ string implement(const string &socket_name) {
     return socket_name;
 }
 
-void run(const function<void(const string &, const vector<string> &)> &callJVM) {
-    pb_global.callJVM = callJVM;
+void run(const function<string(const string &, const vector<string> &)> &callJVM) {
+    state.callJVM = callJVM;
+    callJVM("ready", {});
 
     LOGI("Running Wayland display...");
-    wl_display_run(pb_global.display);
-    wl_display_destroy(pb_global.display);
+    wl_display_run(state.display);
+    wl_display_destroy(state.display);
 }
 
-void handle_event(TouchEventData event) {
-    if (pb_global.touch == nullptr) {
-        return;
-    }
+void set_surface(uint32_t id, ANativeWindow *pWindow) {
+    assert(state.surfaces.count(id));
+    // Link this surface with the SurfaceView MainActivity just created
+    state.surfaces[id].androidNativeWindow = pWindow;
+}
+
+void handle_event(uint32_t surface_id, TouchEventData event) {
+    assert(state.touch);
+    auto surface = state.surfaces[surface_id].resource;
 
     // Convert coordinates to wl_fixed_t format
     wl_fixed_t x_fixed = wl_fixed_from_double(static_cast<double>(event.x));
@@ -461,32 +519,32 @@ void handle_event(TouchEventData event) {
     const int ACTION_MOVE = 2;
 
     // Serial number, incremented with each unique event
-    auto serial = wl_display_next_serial(pb_global.display);
+    auto serial = wl_display_next_serial(state.display);
     auto id = 1;
 
     // Check the action type and call the corresponding wl_touch_* function
     switch (event.action) {
         case ACTION_DOWN:
-            wl_touch_send_down(pb_global.touch, serial, event.timestamp, pb_global.surface,
+            wl_touch_send_down(state.touch, serial, event.timestamp, surface,
                                id,
                                x_fixed, y_fixed);
-            wl_touch_send_up(pb_global.touch, serial, event.timestamp, id);
-            wl_pointer_send_enter(pb_global.pointer, serial, pb_global.surface, x_fixed, y_fixed);
-            wl_pointer_send_motion(pb_global.pointer, event.timestamp, x_fixed, y_fixed);
-            wl_pointer_send_button(pb_global.pointer, serial, event.timestamp, 0, 0);
-            wl_pointer_send_frame(pb_global.pointer);
+            wl_touch_send_up(state.touch, serial, event.timestamp, id);
+            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
+            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
+            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
+            wl_pointer_send_frame(state.pointer);
             break;
 
         case ACTION_UP:
-            wl_touch_send_up(pb_global.touch, serial, event.timestamp, event.pointerId);
+            wl_touch_send_up(state.touch, serial, event.timestamp, event.pointerId);
             break;
 
         case ACTION_MOVE:
-            wl_touch_send_motion(pb_global.touch, event.timestamp, event.pointerId, x_fixed,
+            wl_touch_send_motion(state.touch, event.timestamp, event.pointerId, x_fixed,
                                  y_fixed);
             break;
     }
 
     // Send a frame event after each touch sequence to signal the end of this touch event group
-    wl_touch_send_frame(pb_global.touch);
+    wl_touch_send_frame(state.touch);
 }

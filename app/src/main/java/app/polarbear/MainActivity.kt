@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -259,7 +260,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) {
-                    WaylandDisplay()
+                    if (serviceBound) {
+                        SurfaceGroup()
+                    }
                     // Right panel, constant width with animated x-axis offset
                     Box(
                         modifier = Modifier
@@ -278,39 +281,54 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun WaylandDisplay() {
-
+    fun SurfaceGroup() {
+        // Using AndroidView to create a custom FrameLayout container
         AndroidView(
+            modifier = Modifier.fillMaxSize(),
             factory = { context ->
-                SurfaceView(context).apply {
-// Enable touch handling on the SurfaceView
-                    setOnTouchListener { view, event ->
-                        // Handle touch events here
-                        val data = motionEventToData(event, view)
-                        NativeLib.sendTouchEvent(data)
-                        performClick() // click and pointer events should be handled differently
-                        true // Return true to indicate the event was handled
-                    }
-
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            // Surface is ready for drawing, access the Surface via holder.surface
-                        }
-
-                        override fun surfaceChanged(
-                            holder: SurfaceHolder, format: Int, width: Int, height: Int
-                        ) {
-                            // Handle surface changes, such as size or format updates
-                        }
-
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            // Cleanup resources when the surface is destroyed
-                        }
-                    })
-                }
+                // Create a container FrameLayout to hold multiple SurfaceViews
+                FrameLayout(context)
             },
-            modifier = Modifier.fillMaxSize()
+            update = { view ->
+                // Clear any previous views (in case of recomposition)
+                view.removeAllViews()
+
+                // Create and add a SurfaceView for each surface in the surfaceList
+                mainService!!.surfaceList.forEach { surface ->
+                    val surfaceView = SurfaceView(view.context).apply {
+                        // The wayland client will interact with this surface via this id
+                        id = surface.id
+
+                        // Enable touch handling on the SurfaceView
+                        setOnTouchListener { view, event ->
+                            // Handle touch events here
+                            val data = motionEventToData(event, view)
+                            mainService!!.nativeLib.sendTouchEvent(surface.id, data)
+                            performClick() // click and pointer events should be handled differently
+                            true // Return true to indicate the event was handled
+                        }
+
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) {
+                                // Surface is ready for drawing, access the Surface via holder.surface
+                                mainService!!.nativeLib.setSurface(surface.id, holder.surface)
+                            }
+
+                            override fun surfaceChanged(
+                                holder: SurfaceHolder, format: Int, width: Int, height: Int
+                            ) {
+                                // Handle surface changes, such as size or format updates
+                            }
+
+                            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                // Cleanup resources when the surface is destroyed
+                            }
+                        })
+                    }
+                    // Add the SurfaceView to the FrameLayout (Stacking them on top of each other)
+                    view.addView(surfaceView)
+                }
+            }
         )
     }
-
 }

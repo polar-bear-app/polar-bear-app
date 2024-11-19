@@ -1,5 +1,6 @@
-#include <jni.h>
+#include <cassert>
 #include <thread>
+#include <jni.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
@@ -15,62 +16,16 @@
 
 using namespace std;
 
-//void render_buffer(struct wl_shm_buffer *waylandBuffer) {
-//    if (globalSurface == nullptr) {
-//        return;
-//    }
-//
-//    // Convert the Surface (jobject) to ANativeWindow
-//    ANativeWindow *androidNativeWindow = ANativeWindow_fromSurface(globalEnv, globalSurface);
-//    wl_shm_buffer_begin_access(waylandBuffer);
-//
-//    // Step 2: Get buffer details.
-//    void *waylandData = wl_shm_buffer_get_data(waylandBuffer);
-//    int32_t width = wl_shm_buffer_get_width(waylandBuffer);
-//    int32_t height = wl_shm_buffer_get_height(waylandBuffer);
-//    int32_t stride = wl_shm_buffer_get_stride(waylandBuffer);
-//    uint32_t format = wl_shm_buffer_get_format(waylandBuffer);
-//
-//    // Step 3: Configure the native window.
-//    ANativeWindow_setBuffersGeometry(androidNativeWindow, width, height,
-//                                     format == WL_SHM_FORMAT_ARGB8888
-//                                     ? AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
-//                                     : AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
-//
-//    // Step 4: Lock the native window buffer for writing.
-//    ANativeWindow_Buffer buffer;
-//    if (ANativeWindow_lock(androidNativeWindow, &buffer, nullptr) == 0) {
-//        // Step 5: Copy the data from the Wayland buffer to the native window buffer.
-//        uint8_t *dest = static_cast<uint8_t *>(buffer.bits);
-//        uint8_t *src = static_cast<uint8_t *>(waylandData);
-//
-//        for (int y = 0; y < height; y++) {
-//            memcpy(dest, src, width * 4); // 4 bytes per pixel for RGBX_8888.
-//            dest += buffer.stride * 4;    // Move to the next line in the native buffer.
-//            src += stride;                // Move to the next line in the Wayland buffer.
-//        }
-//
-//        // Step 6: Unlock and post the buffer to display the content.
-//        ANativeWindow_unlockAndPost(androidNativeWindow);
-//    }
-//
-//    // Step 7: End access to the Wayland buffer.
-//    wl_shm_buffer_end_access(waylandBuffer);
-//}
-
-
 // Function to call the Kotlin method with arguments
-const string callJVM(JNIEnv *env, const string &request, const vector<string> &args) {
-    // Find the Kotlin class and method
-    jclass clazz = env->FindClass("app/polarbear/compositor/NativeLib");
-    if (!clazz) {
-        return "Class not found";
-    }
+const string callJVM(JNIEnv *env, jobject thiz, const string &request, const vector<string> &args) {
+    // Find the Kotlin class
+    jclass clazz = env->GetObjectClass(thiz);  // Use GetObjectClass for instance methods
+    assert(clazz);
 
-    jmethodID methodID = env->GetStaticMethodID(clazz, "callJVM", "(Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/String;");
-    if (!methodID) {
-        return "Method not found";
-    }
+    // Find the method ID for the instance method
+    jmethodID methodID = env->GetMethodID(clazz, "callJVM",
+                                          "(Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/String;");
+    assert(methodID); // Check the callJVM method in NativeLib.kt
 
     // Convert vector<string> to jobjectArray
     jclass stringClass = env->FindClass("java/lang/String");
@@ -85,7 +40,7 @@ const string callJVM(JNIEnv *env, const string &request, const vector<string> &a
     jstring jRequest = env->NewStringUTF(request.c_str());
 
     // Call the Kotlin method
-    jobject result = env->CallStaticObjectMethod(clazz, methodID, jRequest, jArgs);
+    jobject result = env->CallObjectMethod(thiz, methodID, jRequest, jArgs);
 
     // Handle the result
     string resultStr;
@@ -94,24 +49,32 @@ const string callJVM(JNIEnv *env, const string &request, const vector<string> &a
         resultStr = string(cResultStr);
         env->ReleaseStringUTFChars((jstring) result, cResultStr);
     } else {
-        resultStr = nullptr;
+        resultStr = "";
     }
 
     return resultStr;
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_app_polarbear_compositor_NativeLib_start(
-        JNIEnv *env, jclass clazz, jstring socket_name) {
+extern "C"
+JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_start(JNIEnv *env, jobject thiz, jstring socket_name) {
     implement(jstringToString(env, socket_name));
-    run([&env](const string &request, const vector<string> &args) {
-        callJVM(env, request, args);
+    run([&env, &thiz](const string &request, const vector<string> &args) {
+        return callJVM(env, thiz, request, args);
     });
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jclass clazz,
+extern "C"
+JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_setSurface(JNIEnv *env, jobject thiz, jint id,
+                                                   jobject surface) {
+    ANativeWindow *androidNativeWindow = ANativeWindow_fromSurface(env, surface);
+    set_surface((uint32_t) id, androidNativeWindow);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jobject thiz, jint surface_id,
                                                        jobject event) {
-    auto data = convertToTouchEventData(env, event);
-    handle_event(data);
+    handle_event((uint32_t) surface_id, convertToTouchEventData(env, event));
 }

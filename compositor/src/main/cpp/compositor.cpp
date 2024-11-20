@@ -23,9 +23,9 @@
 using namespace std;
 
 struct PolarBearSurface {
-    ANativeWindow *androidNativeWindow;
-    wl_resource *resource;
-    wl_shm_buffer *waylandBuffer;
+    ANativeWindow *androidNativeWindow = nullptr;
+    wl_resource *resource = nullptr;
+    wl_shm_buffer *waylandBuffer = nullptr;
 };
 
 struct PolarBearState {
@@ -105,9 +105,10 @@ void send_configures() {
 }
 
 static const struct wl_surface_interface surface_impl = {
-        [](struct wl_client *client, struct wl_resource *resource) {},
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *buffer,
-           int32_t x, int32_t y) {
+        .destroy = [](struct wl_client *client, struct wl_resource *resource) {},
+        .attach = [](struct wl_client *client, struct wl_resource *resource,
+                     struct wl_resource *buffer,
+                     int32_t x, int32_t y) {
             if (buffer) {
                 auto pShmBuffer = wl_shm_buffer_get(buffer);
                 if (pShmBuffer == NULL) {
@@ -117,27 +118,29 @@ static const struct wl_surface_interface surface_impl = {
                 state.surfaces[resource->object.id].waylandBuffer = pShmBuffer;
             }
         },
-        [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y,
-           int32_t width, int32_t height) {
-            LOGI("surface_damage");
-        },
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t callback) {
+        .damage = [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y,
+                     int32_t width, int32_t height) {},
+        .frame = [](struct wl_client *client, struct wl_resource *resource, uint32_t callback) {
             auto cb = wl_resource_create(client, &wl_callback_interface, 1, callback);
             wl_resource_set_implementation(cb, nullptr, nullptr, nullptr);
             wl_callback_send_done(cb, get_current_timestamp());
         },
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *region) {},
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *region) {},
-        [](struct wl_client *client, struct wl_resource *resource) {
-            LOGI("surface_commit");
+        .set_opaque_region = [](struct wl_client *client, struct wl_resource *resource,
+                                struct wl_resource *region) {},
+        .set_input_region = [](struct wl_client *client, struct wl_resource *resource,
+                               struct wl_resource *region) {},
+        .commit = [](struct wl_client *client, struct wl_resource *resource) {
             render(state.surfaces[resource->object.id]);
-            send_configures();
         },
-        [](struct wl_client *client, struct wl_resource *resource, int32_t transform) {},
-        [](struct wl_client *client, struct wl_resource *resource, int32_t scale) {},
-        [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y,
-           int32_t width, int32_t height) {},
-        [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y) {},
+        .set_buffer_transform = [](struct wl_client *client, struct wl_resource *resource,
+                                   int32_t transform) {},
+        .set_buffer_scale = [](struct wl_client *client, struct wl_resource *resource,
+                               int32_t scale) {},
+        .damage_buffer = [](struct wl_client *client, struct wl_resource *resource, int32_t x,
+                            int32_t y,
+                            int32_t width, int32_t height) {},
+        .offset = [](struct wl_client *client, struct wl_resource *resource, int32_t x,
+                     int32_t y) {},
 };
 
 static const struct wl_region_interface region_impl = {
@@ -168,8 +171,7 @@ static const struct wl_compositor_interface compositor_impl = {
             state.surfaces[id] = surface;
             state.callJVM("createSurface", {to_string(id)}); // Tell Kotlin to create a SurfaceView
         },
-        .
-        create_region = [](struct wl_client *client,
+        .create_region = [](struct wl_client *client,
                            struct wl_resource *resource, uint32_t id) {
             auto region =
                     wl_resource_create(client, &wl_region_interface, 1, id);
@@ -503,6 +505,7 @@ void set_surface(uint32_t id, ANativeWindow *pWindow) {
     assert(state.surfaces.count(id));
     // Link this surface with the SurfaceView MainActivity just created
     state.surfaces[id].androidNativeWindow = pWindow;
+    send_configures();
 }
 
 void handle_event(uint32_t surface_id, TouchEventData event) {

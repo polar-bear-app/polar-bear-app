@@ -6,13 +6,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
-import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.core.app.NotificationCompat
+import app.polarbear.compositor.NativeEventHandler
 import app.polarbear.compositor.NativeLib
 import app.polarbear.data.SurfaceData
 import app.polarbear.utils.SafeToRetryException
@@ -32,7 +31,7 @@ import kotlin.concurrent.thread
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-class MainService : Service() {
+class MainService : Service(), NativeEventHandler {
 
     companion object {
         const val DISPLAY = "wayland-pb"
@@ -50,7 +49,7 @@ class MainService : Service() {
     private val compositorReadyLatch = CountDownLatch(1)
     private lateinit var fsRoot: File
 
-    val nativeLib = NativeLib(this::handleJNICallback)
+    val nativeLib = NativeLib(this)
     val surfaceList = mutableStateListOf<SurfaceData>()
     val logFlow: StateFlow<List<String>> = _logFlow // Expose a StateFlow to the outside
 
@@ -347,40 +346,16 @@ class MainService : Service() {
         }
     }
 
-
-    private fun handleJNICallback(request: String, vararg args: String): String? {
-        try {
-            // Get the method dynamically
-            val method = this::class.java.getDeclaredMethod(request, Array<String>::class.java)
-
-            // Make the method accessible
-            method.isAccessible = true
-
-            // Call the method dynamically with arguments
-            val result = method.invoke(this, args)
-
-            // Ensure the result is a String
-            require(result is String?) { "Expected return type String, but got ${result?.javaClass?.name}" }
-
-            // Return it to the JNI caller
-            return result
-        } catch (e: Exception) {
-            addLogLine(e.toString())
-            return null
-        }
-    }
-
     /**
      * JNI Callbacks
      */
-    private fun createSurface(vararg args: String) {
-        val id = args.first().toInt()
+    override fun createSurface(id: Int) {
         this.surfaceList.add(
             SurfaceData(id)
         )
     }
 
-    private fun ready(vararg args: String) {
+    override fun ready() {
         compositorReadyLatch.countDown()
     }
 

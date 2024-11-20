@@ -24,7 +24,7 @@ const string callJVM(JNIEnv *env, jobject thiz, const string &request, const vec
 
     // Find the method ID for the instance method
     jmethodID methodID = env->GetMethodID(clazz, "callJVM",
-                                          "(Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/String;");
+                                          "(Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/Object;");
     assert(methodID); // Check the callJVM method in NativeLib.kt
 
     // Convert vector<string> to jobjectArray
@@ -41,16 +41,12 @@ const string callJVM(JNIEnv *env, jobject thiz, const string &request, const vec
 
     // Call the Kotlin method
     jobject result = env->CallObjectMethod(thiz, methodID, jRequest, jArgs);
+    assert(result != nullptr);
 
     // Handle the result
-    string resultStr;
-    if (result != nullptr) {
-        const char *cResultStr = env->GetStringUTFChars((jstring) result, nullptr);
-        resultStr = string(cResultStr);
-        env->ReleaseStringUTFChars((jstring) result, cResultStr);
-    } else {
-        resultStr = "";
-    }
+    const char *cResultStr = env->GetStringUTFChars((jstring) result, nullptr);
+    string resultStr = string(cResultStr);
+    env->ReleaseStringUTFChars((jstring) result, cResultStr);
 
     return resultStr;
 }

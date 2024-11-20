@@ -3,7 +3,12 @@ package app.polarbear.compositor
 import android.view.Surface
 import app.polarbear.data.TouchEventData
 
-class NativeLib(private val callService: (String, Array<out String>) -> String?) {
+interface NativeEventHandler {
+    fun createSurface(id: Int)
+    fun ready()
+}
+
+class NativeLib(private val eventHandler: NativeEventHandler) {
 
     companion object {
         // Used to load the 'compositor' library on application startup.
@@ -12,7 +17,19 @@ class NativeLib(private val callService: (String, Array<out String>) -> String?)
         }
     }
 
-    fun callJVM(request: String, vararg args: String): String? = callService(request, args)
+    @Suppress("UNUSED")
+    fun callJVM(request: String, vararg args: String): Any {
+        val result = when (request) {
+            "ready" -> eventHandler.ready()
+            "createSurface" -> eventHandler.createSurface(args[0].toInt())
+            else -> ""
+        }
+        return if (result is String) {
+            result
+        } else {
+            ""
+        }
+    }
 
     /**
      * Start the Wayland compositor.

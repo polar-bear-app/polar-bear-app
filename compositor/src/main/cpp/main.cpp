@@ -64,8 +64,8 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_setSurface(JNIEnv *env, jobject thiz, jint id,
                                                    jobject surface) {
-    ANativeWindow *androidNativeWindow = ANativeWindow_fromSurface(env, surface);
-    set_surface((uint32_t) id, androidNativeWindow);
+    auto globalSurface = env->NewGlobalRef(surface);
+    set_surface((uint32_t) id, ANativeWindow_fromSurface(env, globalSurface));
 }
 
 extern "C"

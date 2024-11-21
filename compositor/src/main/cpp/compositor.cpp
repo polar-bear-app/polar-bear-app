@@ -24,8 +24,10 @@ using namespace std;
 
 struct PolarBearSurface {
     ANativeWindow *androidNativeWindow = nullptr;
-    wl_resource *resource = nullptr;
     wl_shm_buffer *waylandBuffer = nullptr;
+    wl_resource *resource = nullptr;
+    wl_resource *xdg_surface = nullptr;
+    wl_resource *xdg_toplevel_surface = nullptr;
 };
 
 struct PolarBearState {
@@ -35,15 +37,13 @@ struct PolarBearState {
     // to be structured
     wl_display *display;
     wl_resource *output;
-    wl_resource *xdg_surface;
-    wl_resource *xdg_toplevel_surface;
     wl_resource *pointer;
     wl_resource *touch;
 };
 
 static PolarBearState state;
 
-void render(PolarBearSurface surface) {
+void render(const PolarBearSurface &surface) {
     auto waylandBuffer = surface.waylandBuffer;
     auto androidNativeWindow = surface.androidNativeWindow;
 
@@ -86,22 +86,6 @@ void render(PolarBearSurface surface) {
 
     // Step 7: End access to the Wayland buffer.
     wl_shm_buffer_end_access(waylandBuffer);
-}
-
-void send_configures() {
-    struct wl_array states;
-    wl_array_init(&states);
-    uint32_t *s = static_cast<uint32_t *>(wl_array_add(&states,
-                                                       sizeof(uint32_t)));
-    *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
-    xdg_toplevel_send_configure(state.xdg_toplevel_surface, 1024,
-                                768,
-                                &states);
-    wl_array_release(&states);
-
-    xdg_surface_send_configure(state.xdg_surface,
-                               wl_display_next_serial(
-                                       state.display));
 }
 
 static const struct wl_surface_interface surface_impl = {
@@ -159,20 +143,18 @@ static const struct wl_region_interface region_impl = {
 
 static const struct wl_compositor_interface compositor_impl = {
         .create_surface = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
-            PolarBearSurface surface;
+            auto &surface = state.surfaces[id];
 
             // Wayland protocol logic
             surface.resource = wl_resource_create(client, &wl_surface_interface,
                                                   wl_resource_get_version(resource), id);
             wl_resource_set_implementation(surface.resource, &surface_impl,
                                            nullptr, nullptr);
-
             // Polar Bear logic
-            state.surfaces[id] = surface;
             state.callJVM("createSurface", {to_string(id)}); // Tell Kotlin to create a SurfaceView
         },
         .create_region = [](struct wl_client *client,
-                           struct wl_resource *resource, uint32_t id) {
+                            struct wl_resource *resource, uint32_t id) {
             auto region =
                     wl_resource_create(client, &wl_region_interface, 1, id);
             if (region == nullptr) {
@@ -194,14 +176,12 @@ static const struct xdg_toplevel_interface xdg_toplevel_impl = {
            struct wl_resource *resource,
            const char *title) {
             LOGI("set_title %s", title);
-            send_configures();
         },
 
         [](struct wl_client *wl_client,
            struct wl_resource *resource,
            const char *app_id) {
             LOGI("set_app_id %s", app_id);
-            send_configures();
         },
 
         [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
@@ -226,7 +206,6 @@ static const struct xdg_toplevel_interface xdg_toplevel_impl = {
         [](struct wl_client *wl_client,
            struct wl_resource *resource,
            struct wl_resource *output_resource) {
-            send_configures();
         },
 
         [](struct wl_client *client, struct wl_resource *resource) {},
@@ -246,7 +225,15 @@ static const struct xdg_surface_interface xdg_surface_impl = {
             wl_resource_set_implementation(res, &xdg_toplevel_impl, nullptr,
                                            nullptr);
 
-            state.xdg_toplevel_surface = res;
+            struct wl_array states;
+            wl_array_init(&states);
+            auto *s = static_cast<uint32_t *>(wl_array_add(&states,
+                                                           sizeof(uint32_t)));
+            *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
+            xdg_toplevel_send_configure(res, 1024,
+                                        768,
+                                        &states);
+            wl_array_release(&states);
         },
 
         [](struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -289,8 +276,8 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
                                                wl_resource_get_version(wl_surface_resource),
                                                id);
             wl_resource_set_implementation(resource, &xdg_surface_impl, nullptr, nullptr);
-
-            state.xdg_surface = resource;
+            assert(state.surfaces.count(wl_surface_resource->object.id) > 0);
+            state.surfaces[wl_surface_resource->object.id].xdg_surface = resource;
         },
         [](struct wl_client *wl_client, struct wl_resource *resource, uint32_t serial) {
             LOGI("pong");
@@ -380,8 +367,6 @@ string implement(const string &socket_name) {
                      wl_compositor_interface.version, nullptr,
                      [](struct wl_client *wl_client, void *data,
                         uint32_t version, uint32_t id) {
-                         //    struct wlr_compositor *compositor = data;
-
                          struct wl_resource *resource =
                                  wl_resource_create(wl_client, &wl_compositor_interface, version,
                                                     id);
@@ -503,9 +488,17 @@ void run(const function<string(const string &, const vector<string> &)> &callJVM
 
 void set_surface(uint32_t id, ANativeWindow *pWindow) {
     assert(state.surfaces.count(id));
+
     // Link this surface with the SurfaceView MainActivity just created
-    state.surfaces[id].androidNativeWindow = pWindow;
-    send_configures();
+    auto &surface = state.surfaces[id];
+    surface.androidNativeWindow = pWindow;
+
+    // Tell the client that this surface is ready
+    if (surface.xdg_surface != nullptr) {
+        xdg_surface_send_configure(surface.xdg_surface,
+                                   wl_display_next_serial(
+                                           state.display));
+    }
 }
 
 void handle_event(uint32_t surface_id, TouchEventData event) {

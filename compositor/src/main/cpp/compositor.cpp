@@ -43,6 +43,30 @@ struct PolarBearState {
 
 static PolarBearState state;
 
+void send_configures(const PolarBearSurface &surface) {
+    if (surface.xdg_surface != nullptr
+        && surface.xdg_toplevel_surface != nullptr
+        && surface.androidNativeWindow != nullptr) {
+        // Send toplevel configure
+        struct wl_array states;
+        wl_array_init(&states);
+        auto *s = static_cast<uint32_t *>(wl_array_add(&states,
+                                                       sizeof(uint32_t)));
+        *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
+        xdg_toplevel_send_configure(surface.xdg_toplevel_surface, 1024,
+                                    768,
+                                    &states);
+        wl_array_release(&states);
+
+        // Send xdg configure
+        xdg_surface_send_configure(surface.xdg_surface,
+                                   wl_display_next_serial(
+                                           state.display));
+    } else {
+        wl_display_flush_clients(state.display);
+    }
+}
+
 void render(const PolarBearSurface &surface) {
     auto waylandBuffer = surface.waylandBuffer;
     auto androidNativeWindow = surface.androidNativeWindow;
@@ -168,56 +192,59 @@ static const struct wl_compositor_interface compositor_impl = {
 
 static const struct xdg_toplevel_interface xdg_toplevel_impl = {
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .destroy = [](struct wl_client *client, struct wl_resource *resource) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent) {},
+        .set_parent = [](struct wl_client *client, struct wl_resource *resource,
+                         struct wl_resource *parent) {},
 
-        [](struct wl_client *wl_client,
-           struct wl_resource *resource,
-           const char *title) {
+        .set_title = [](struct wl_client *wl_client,
+                        struct wl_resource *resource,
+                        const char *title) {
             LOGI("set_title %s", title);
         },
 
-        [](struct wl_client *wl_client,
-           struct wl_resource *resource,
-           const char *app_id) {
+        .set_app_id = [](struct wl_client *wl_client,
+                         struct wl_resource *resource,
+                         const char *app_id) {
             LOGI("set_app_id %s", app_id);
         },
 
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
-           uint32_t serial, int32_t x, int32_t y) {},
+        .show_window_menu = [](struct wl_client *client, struct wl_resource *resource,
+                               struct wl_resource *seat,
+                               uint32_t serial, int32_t x, int32_t y) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
-           uint32_t serial) {},
+        .move = [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
+                   uint32_t serial) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat,
-           uint32_t serial, uint32_t edges) {},
+        .resize = [](struct wl_client *client, struct wl_resource *resource,
+                     struct wl_resource *seat,
+                     uint32_t serial, uint32_t edges) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, int32_t width,
-           int32_t height) {},
+        .set_max_size = [](struct wl_client *client, struct wl_resource *resource, int32_t width,
+                           int32_t height) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, int32_t width,
-           int32_t height) {},
+        .set_min_size = [](struct wl_client *client, struct wl_resource *resource, int32_t width,
+                           int32_t height) {},
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .set_maximized = [](struct wl_client *client, struct wl_resource *resource) {},
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .unset_maximized = [](struct wl_client *client, struct wl_resource *resource) {},
 
-        [](struct wl_client *wl_client,
-           struct wl_resource *resource,
-           struct wl_resource *output_resource) {
+        .set_fullscreen = [](struct wl_client *wl_client,
+                             struct wl_resource *resource,
+                             struct wl_resource *output_resource) {
         },
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .unset_fullscreen = [](struct wl_client *client, struct wl_resource *resource) {},
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .set_minimized = [](struct wl_client *client, struct wl_resource *resource) {},
 };
 
 static const struct xdg_surface_interface xdg_surface_impl = {
 
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .destroy = [](struct wl_client *client, struct wl_resource *resource) {},
 
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+        .get_toplevel = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto res = wl_resource_create(client,
                                           &xdg_toplevel_interface,
                                           wl_resource_get_version(resource),
@@ -225,38 +252,41 @@ static const struct xdg_surface_interface xdg_surface_impl = {
             wl_resource_set_implementation(res, &xdg_toplevel_impl, nullptr,
                                            nullptr);
 
-            struct wl_array states;
-            wl_array_init(&states);
-            auto *s = static_cast<uint32_t *>(wl_array_add(&states,
-                                                           sizeof(uint32_t)));
-            *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
-            xdg_toplevel_send_configure(res, 1024,
-                                        768,
-                                        &states);
-            wl_array_release(&states);
+            auto surface = find_if(state.surfaces.begin(), state.surfaces.end(),
+                                   [&resource](const pair<uint32_t, PolarBearSurface> &surface) {
+                                       return surface.second.xdg_surface->object.id ==
+                                              resource->object.id;
+                                   });
+            assert(surface != state.surfaces.end());
+            surface->second.xdg_toplevel_surface = res;
+
+            send_configures(surface->second);
         },
 
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id,
-           struct wl_resource *parent, struct wl_resource *positioner) {
+        .get_popup = [](struct wl_client *client, struct wl_resource *resource, uint32_t id,
+                        struct wl_resource *parent, struct wl_resource *positioner) {
             assert(false);
         },
 
-        [](struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y,
-           int32_t width, int32_t height) {
+        .set_window_geometry = [](struct wl_client *client, struct wl_resource *resource, int32_t x,
+                                  int32_t y,
+                                  int32_t width, int32_t height) {
 //            assert(false);
         },
 
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
+        .ack_configure = [](struct wl_client *client, struct wl_resource *resource,
+                            uint32_t serial) {
 //            assert(false);
         },
 
 };
 
 static const struct xdg_wm_base_interface xdg_shell_impl = {
-        [](struct wl_client *client, struct wl_resource *resource) {
+        .destroy = [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
         },
-        [](struct wl_client *wl_client, struct wl_resource *wl_resource, uint32_t id) {
+        .create_positioner = [](struct wl_client *wl_client, struct wl_resource *wl_resource,
+                                uint32_t id) {
 //            auto resource =
 //                    wl_resource_create(wl_client,
 //                                       &xdg_positioner_interface,
@@ -269,8 +299,9 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
 //                                           &weston_desktop_xdg_positioner_implementation,
 //                                           positioner, weston_desktop_xdg_positioner_destroy);
         },
-        [](struct wl_client *wl_client, struct wl_resource *xdg_wm_base_resource, uint32_t id,
-           struct wl_resource *wl_surface_resource) {
+        .get_xdg_surface = [](struct wl_client *wl_client, struct wl_resource *xdg_wm_base_resource,
+                              uint32_t id,
+                              struct wl_resource *wl_surface_resource) {
             auto resource = wl_resource_create(wl_client,
                                                &xdg_surface_interface,
                                                wl_resource_get_version(wl_surface_resource),
@@ -279,40 +310,40 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
             assert(state.surfaces.count(wl_surface_resource->object.id) > 0);
             state.surfaces[wl_surface_resource->object.id].xdg_surface = resource;
         },
-        [](struct wl_client *wl_client, struct wl_resource *resource, uint32_t serial) {
+        .pong = [](struct wl_client *wl_client, struct wl_resource *resource, uint32_t serial) {
             LOGI("pong");
         },
 };
 
 static const struct wl_output_interface output_impl = {
-        [](struct wl_client *client, struct wl_resource *resource) {
+        .release = [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
         },
 };
 
 static const struct wl_pointer_interface pointer_impl = {
-        [](struct wl_client *client,
-           struct wl_resource *resource,
-           uint32_t serial,
-           struct wl_resource *surface,
-           int32_t hotspot_x,
-           int32_t hotspot_y) {
+        .set_cursor = [](struct wl_client *client,
+                         struct wl_resource *resource,
+                         uint32_t serial,
+                         struct wl_resource *surface,
+                         int32_t hotspot_x,
+                         int32_t hotspot_y) {
             LOGI("wl_pointer_interface@set_cursor");
         },
-        [](struct wl_client *client,
-           struct wl_resource *resource) {
+        .release = [](struct wl_client *client,
+                      struct wl_resource *resource) {
 
         }
 };
 
 static const struct wl_touch_interface touch_impl = {
-        [](struct wl_client *client, struct wl_resource *resource) {
+        .release = [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
         }
 };
 
 static const struct wl_seat_interface seat_impl = {
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+        .get_pointer = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto pointer = wl_resource_create(client, &wl_pointer_interface,
                                               wl_resource_get_version(resource), id);
 
@@ -321,8 +352,8 @@ static const struct wl_seat_interface seat_impl = {
             state.pointer = pointer;
             wl_pointer_send_frame(pointer);
         },
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
-        [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+        .get_keyboard = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
+        .get_touch = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto touch = wl_resource_create(client, &wl_touch_interface,
                                             wl_resource_get_version(resource), id);
 
@@ -331,7 +362,7 @@ static const struct wl_seat_interface seat_impl = {
 
             state.touch = touch;
         },
-        [](struct wl_client *client, struct wl_resource *resource) {},
+        .release = [](struct wl_client *client, struct wl_resource *resource) {},
 };
 
 
@@ -494,11 +525,7 @@ void set_surface(uint32_t id, ANativeWindow *pWindow) {
     surface.androidNativeWindow = pWindow;
 
     // Tell the client that this surface is ready
-    if (surface.xdg_surface != nullptr) {
-        xdg_surface_send_configure(surface.xdg_surface,
-                                   wl_display_next_serial(
-                                           state.display));
-    }
+    send_configures(surface);
 }
 
 void handle_event(uint32_t surface_id, TouchEventData event) {

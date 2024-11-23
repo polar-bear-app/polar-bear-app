@@ -190,7 +190,7 @@ class MainService : Service(), NativeEventHandler {
 
             // Step 5. Start the Wayland compositor in proot (the compositor must support Wayland backend option).
 //            val command =
-//                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$display WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
+//                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
             val command =
                 "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client weston --renderer=pixman --fullscreen"
             execute(command, returnOnExit = false)

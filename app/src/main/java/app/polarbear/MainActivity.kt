@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.size
 import app.polarbear.compositor.NativeLib
 import app.polarbear.data.motionEventToData
 import app.polarbear.ui.theme.PolarBearTheme
@@ -326,7 +327,7 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     // Add the SurfaceView to the FrameLayout (Stacking them on top of each other)
-                    view.addView(surfaceView)
+                    view.addView(surfaceView, 0)
                 }
             }
         )

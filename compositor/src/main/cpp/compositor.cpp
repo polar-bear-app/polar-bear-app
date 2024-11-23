@@ -39,6 +39,7 @@ struct PolarBearState {
     wl_resource *output;
     wl_resource *pointer;
     wl_resource *touch;
+    int32_t touchDownId;
 };
 
 static PolarBearState state;
@@ -62,6 +63,8 @@ void send_configures(const PolarBearSurface &surface) {
         xdg_surface_send_configure(surface.xdg_surface,
                                    wl_display_next_serial(
                                            state.display));
+
+        wl_surface_send_enter(surface.resource, state.output);
     } else {
         wl_display_flush_clients(state.display);
     }
@@ -543,23 +546,24 @@ void handle_event(uint32_t surface_id, TouchEventData event) {
 
     // Serial number, incremented with each unique event
     auto serial = wl_display_next_serial(state.display);
-    auto id = 1;
 
     // Check the action type and call the corresponding wl_touch_* function
     switch (event.action) {
         case ACTION_DOWN:
+            state.touchDownId = serial;
             wl_touch_send_down(state.touch, serial, event.timestamp, surface,
-                               id,
+                               state.touchDownId,
                                x_fixed, y_fixed);
-            wl_touch_send_up(state.touch, serial, event.timestamp, id);
-            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
-            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
-            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
-            wl_pointer_send_frame(state.pointer);
+//            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
+//            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
+//            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
+//            wl_pointer_send_frame(state.pointer);
+            wl_display_flush_clients(state.display);
             break;
 
         case ACTION_UP:
-            wl_touch_send_up(state.touch, serial, event.timestamp, event.pointerId);
+            wl_touch_send_up(state.touch, serial, event.timestamp, state.touchDownId);
+            wl_display_flush_clients(state.display);
             break;
 
         case ACTION_MOVE:

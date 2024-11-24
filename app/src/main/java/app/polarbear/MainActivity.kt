@@ -6,8 +6,10 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -49,12 +51,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.size
-import app.polarbear.compositor.NativeLib
+import app.polarbear.data.keyboardEventToData
 import app.polarbear.data.motionEventToData
 import app.polarbear.ui.theme.PolarBearTheme
 import kotlin.math.max
 import kotlin.math.min
+
 
 class MainActivity : ComponentActivity() {
     private var mainService: MainService? = null
@@ -309,6 +311,17 @@ class MainActivity : ComponentActivity() {
                             true // Return true to indicate the event was handled
                         }
 
+                        setOnKeyListener { v, keyCode, event ->
+                            // Send Wayland key event
+                            val data = keyboardEventToData(event)
+                            mainService!!.nativeLib.sendKeyboardEvent(surface.id, data)
+
+                            // Translate modifiers and send modifiers event
+//                            translateAndSendModifiers(metaState)
+
+                            true // Consume the event
+                        }
+
                         holder.addCallback(object : SurfaceHolder.Callback {
                             override fun surfaceCreated(holder: SurfaceHolder) {
                                 // Surface is ready for drawing, access the Surface via holder.surface
@@ -326,6 +339,11 @@ class MainActivity : ComponentActivity() {
                             }
                         })
                     }
+                    // Capture keyboard events
+                    surfaceView.focusable = View.FOCUSABLE;
+                    surfaceView.isFocusableInTouchMode = true;
+                    surfaceView.requestFocus();
+
                     // Add the SurfaceView to the FrameLayout (Stacking them on top of each other)
                     view.addView(surfaceView, 0)
                 }

@@ -14,4 +14,6 @@ void run(const function<string(const string &, const vector<string> &)> &callJVM
 
 void set_surface(uint32_t id, ANativeWindow *pWindow);
 
-void handle_event(uint32_t surface_id, TouchEventData event);
+void handle_touch_event(uint32_t surface_id, TouchEventData event);
+
+void handle_keyboard_event(uint32_t surface_id, KeyboardEventData event);

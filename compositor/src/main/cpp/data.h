@@ -14,4 +14,14 @@ struct TouchEventData {
     long timestamp;
 };
 
+struct KeyboardEventData {
+    int action;
+    int scancode;
+    int metaState;
+    int state;
+    long timestamp;
+};
+
 TouchEventData convertToTouchEventData(JNIEnv *env, jobject eventData);
+
+KeyboardEventData convertToKeyboardEventData(JNIEnv *env, jobject eventData);

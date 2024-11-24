@@ -1,6 +1,7 @@
 package app.polarbear.compositor
 
 import android.view.Surface
+import app.polarbear.data.KeyboardEventData
 import app.polarbear.data.TouchEventData
 
 interface NativeEventHandler {
@@ -45,4 +46,9 @@ class NativeLib(private val eventHandler: NativeEventHandler) {
      * Send user input events to the compositor.
      */
     external fun sendTouchEvent(surfaceId: Int, event: TouchEventData): Unit;
+
+    /**
+     * Send user keyboard events to the compositor.
+     */
+    external fun sendKeyboardEvent(surfaceId: Int, event: KeyboardEventData): Unit;
 }

@@ -25,3 +25,23 @@ TouchEventData convertToTouchEventData(JNIEnv *env, jobject eventData) {
 
     return data;
 }
+
+KeyboardEventData convertToKeyboardEventData(JNIEnv *env, jobject eventData) {
+    KeyboardEventData data{};
+
+    // Get the class and field IDs
+    jclass eventClass = env->GetObjectClass(eventData);
+    jfieldID actionField = env->GetFieldID(eventClass, "action", "I");
+    jfieldID scancodeField = env->GetFieldID(eventClass, "scancode", "I");
+    jfieldID metaStateField = env->GetFieldID(eventClass, "metaState", "I");
+    jfieldID stateField = env->GetFieldID(eventClass, "state", "I");
+
+    // Fill in the struct fields
+    data.action = env->GetIntField(eventData, actionField);
+    data.scancode = 8 + env->GetIntField(eventData, scancodeField);
+    data.metaState = env->GetIntField(eventData, metaStateField);
+    data.state = env->GetIntField(eventData, stateField);
+    data.timestamp = get_current_timestamp();
+
+    return data;
+}

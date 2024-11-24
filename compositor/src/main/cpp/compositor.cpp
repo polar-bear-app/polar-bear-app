@@ -37,8 +37,10 @@ struct PolarBearState {
     // to be structured
     wl_display *display;
     wl_resource *output;
-    wl_resource *pointer;
+    wl_resource *seat;
     wl_resource *touch;
+    wl_resource *keyboard;
+    wl_resource *pointer;
     int32_t touchDownId;
 };
 
@@ -170,13 +172,15 @@ static const struct wl_region_interface region_impl = {
 
 static const struct wl_compositor_interface compositor_impl = {
         .create_surface = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
-            auto &surface = state.surfaces[id];
+            PolarBearSurface surface;
 
             // Wayland protocol logic
             surface.resource = wl_resource_create(client, &wl_surface_interface,
                                                   wl_resource_get_version(resource), id);
             wl_resource_set_implementation(surface.resource, &surface_impl,
                                            nullptr, nullptr);
+
+            state.surfaces.emplace(id, surface);
             // Polar Bear logic
             state.callJVM("createSurface", {to_string(id)}); // Tell Kotlin to create a SurfaceView
         },
@@ -257,7 +261,8 @@ static const struct xdg_surface_interface xdg_surface_impl = {
 
             auto surface = find_if(state.surfaces.begin(), state.surfaces.end(),
                                    [&resource](const pair<uint32_t, PolarBearSurface> &surface) {
-                                       return surface.second.xdg_surface->object.id ==
+                                       return surface.second.xdg_surface != nullptr &&
+                                              surface.second.xdg_surface->object.id ==
                                               resource->object.id;
                                    });
             assert(surface != state.surfaces.end());
@@ -345,6 +350,12 @@ static const struct wl_touch_interface touch_impl = {
         }
 };
 
+static const struct wl_keyboard_interface keyboard_interface = {
+        .release = [](struct wl_client *client, struct wl_resource *resource) {
+            wl_resource_destroy(resource);
+        }
+};
+
 static const struct wl_seat_interface seat_impl = {
         .get_pointer = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto pointer = wl_resource_create(client, &wl_pointer_interface,
@@ -355,7 +366,23 @@ static const struct wl_seat_interface seat_impl = {
             state.pointer = pointer;
             wl_pointer_send_frame(pointer);
         },
-        .get_keyboard = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {},
+        .get_keyboard = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+            auto keyboard = wl_resource_create(client, &wl_keyboard_interface,
+                                               wl_resource_get_version(resource), id);
+
+            wl_resource_set_implementation(keyboard, &keyboard_interface,
+                                           nullptr, nullptr);
+
+            state.keyboard = keyboard;
+
+            if (wl_resource_get_version(keyboard) >= WL_KEYBOARD_REPEAT_INFO_SINCE_VERSION) {
+//                wl_keyboard_send_repeat_info(keyboard,
+//                                             seat->compositor->kb_repeat_rate,
+//                                             seat->compositor->kb_repeat_delay);
+            }
+
+//            wl_keyboard_send_keymap(keyboard, keyboard);
+        },
         .get_touch = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto touch = wl_resource_create(client, &wl_touch_interface,
                                             wl_resource_get_version(resource), id);
@@ -493,7 +520,9 @@ string implement(const string &socket_name) {
                     wl_seat_send_name(resource, "Polar Bear Virtual Input");
 
                 wl_seat_send_capabilities(resource,
-                                          WL_SEAT_CAPABILITY_TOUCH | WL_SEAT_CAPABILITY_POINTER);
+                                          WL_SEAT_CAPABILITY_TOUCH | WL_SEAT_CAPABILITY_KEYBOARD);
+
+                state.seat = resource;
             });
 
     // SHM
@@ -531,47 +560,56 @@ void set_surface(uint32_t id, ANativeWindow *pWindow) {
     send_configures(surface);
 }
 
-void handle_event(uint32_t surface_id, TouchEventData event) {
-    assert(state.touch);
-    auto surface = state.surfaces[surface_id].resource;
+void handle_touch_event(uint32_t surface_id, TouchEventData event) {
+    if (state.touch != nullptr) {
+        auto surface = state.surfaces[surface_id].resource;
 
-    // Convert coordinates to wl_fixed_t format
-    wl_fixed_t x_fixed = wl_fixed_from_double(static_cast<double>(event.x));
-    wl_fixed_t y_fixed = wl_fixed_from_double(static_cast<double>(event.y));
+        // Convert coordinates to wl_fixed_t format
+        wl_fixed_t x_fixed = wl_fixed_from_double(static_cast<double>(event.x));
+        wl_fixed_t y_fixed = wl_fixed_from_double(static_cast<double>(event.y));
 
-    // Define constants for motion events (matching Android's MotionEvent constants)
-    const int ACTION_DOWN = 0;
-    const int ACTION_UP = 1;
-    const int ACTION_MOVE = 2;
+        // Define constants for motion events (matching Android's MotionEvent constants)
+        const int ACTION_DOWN = 0;
+        const int ACTION_UP = 1;
+        const int ACTION_MOVE = 2;
 
-    // Serial number, incremented with each unique event
-    auto serial = wl_display_next_serial(state.display);
+        // Serial number, incremented with each unique event
+        auto serial = wl_display_next_serial(state.display);
 
-    // Check the action type and call the corresponding wl_touch_* function
-    switch (event.action) {
-        case ACTION_DOWN:
-            state.touchDownId = serial;
-            wl_touch_send_down(state.touch, serial, event.timestamp, surface,
-                               state.touchDownId,
-                               x_fixed, y_fixed);
+        // Check the action type and call the corresponding wl_touch_* function
+        switch (event.action) {
+            case ACTION_DOWN:
+                state.touchDownId = serial;
+                wl_touch_send_down(state.touch, serial, event.timestamp, surface,
+                                   state.touchDownId,
+                                   x_fixed, y_fixed);
 //            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
 //            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
 //            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
 //            wl_pointer_send_frame(state.pointer);
-            wl_display_flush_clients(state.display);
-            break;
+                wl_display_flush_clients(state.display);
+                break;
 
-        case ACTION_UP:
-            wl_touch_send_up(state.touch, serial, event.timestamp, state.touchDownId);
-            wl_display_flush_clients(state.display);
-            break;
+            case ACTION_UP:
+                wl_touch_send_up(state.touch, serial, event.timestamp, state.touchDownId);
+                wl_display_flush_clients(state.display);
+                break;
 
-        case ACTION_MOVE:
-            wl_touch_send_motion(state.touch, event.timestamp, event.pointerId, x_fixed,
-                                 y_fixed);
-            break;
+            case ACTION_MOVE:
+                wl_touch_send_motion(state.touch, event.timestamp, event.pointerId, x_fixed,
+                                     y_fixed);
+                break;
+        }
+
+        // Send a frame event after each touch sequence to signal the end of this touch event group
+        wl_touch_send_frame(state.touch);
     }
+}
 
-    // Send a frame event after each touch sequence to signal the end of this touch event group
-    wl_touch_send_frame(state.touch);
+void handle_keyboard_event(uint32_t surface_id, KeyboardEventData event) {
+    if (state.keyboard != nullptr) {
+        auto surface = state.surfaces[surface_id].resource;
+        auto serial = wl_display_next_serial(state.display);
+        wl_keyboard_send_key(state.keyboard, serial, event.timestamp, event.scancode, event.state);
+    }
 }

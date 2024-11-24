@@ -72,5 +72,11 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jobject thiz, jint surface_id,
                                                        jobject event) {
-    handle_event((uint32_t) surface_id, convertToTouchEventData(env, event));
+    handle_touch_event((uint32_t) surface_id, convertToTouchEventData(env, event));
+}
+extern "C"
+JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_sendKeyboardEvent(JNIEnv *env, jobject thiz,
+                                                          jint surface_id, jobject event) {
+    handle_keyboard_event((uint32_t) surface_id, convertToKeyboardEventData(env, event));
 }

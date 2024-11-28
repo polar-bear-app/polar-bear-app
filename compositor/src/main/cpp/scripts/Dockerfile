@@ -38,8 +38,13 @@ COPY ndk-crossfile.txt /ndk-crossfile.txt
 # Create output directory for built files
 RUN mkdir /output
 
-# Build libffi and copy to /output
+# Clone libraries
+RUN git clone --branch $(pacman -Qi wayland | grep Version | awk '{print $3}' | cut -d'-' -f1) https://gitlab.freedesktop.org/wayland/wayland.git
+RUN git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
 RUN git clone https://github.com/libffi/libffi.git
+RUN git clone https://github.com/xkbcommon/libxkbcommon.git
+
+# Build libffi and copy to /output
 RUN cd /libffi && \
     ./autogen.sh && \
     cd src/aarch64 && \
@@ -56,9 +61,6 @@ RUN cd /libffi && \
     make && \
     make install
 
-RUN git clone --branch $(pacman -Qi wayland | grep Version | awk '{print $3}' | cut -d'-' -f1) https://gitlab.freedesktop.org/wayland/wayland.git
-RUN git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
-
 # Generate Wayland protocols
 RUN wayland-scanner server-header < /wayland-protocols/stable/xdg-shell/xdg-shell.xml > /output/include/xdg-shell.h && \
     wayland-scanner private-code < /wayland-protocols/stable/xdg-shell/xdg-shell.xml > /output/include/xdg-shell.c
@@ -68,3 +70,19 @@ RUN cd /wayland && \
     meson setup build/ --cross-file /ndk-crossfile.txt -Ddocumentation=false -Dscanner=false -Dprefix=/output && \
     ninja -C build/ && \
     ninja -C build/ install
+
+# Build libxkbcommon with 16 KB page size
+RUN cd /libxkbcommon && \
+    meson setup build/ \
+        --cross-file /ndk-crossfile.txt \
+        -Denable-tools=false \
+        -Denable-x11=false \
+        -Denable-xkbregistry=false \
+        -Denable-bash-completion=false \
+        -Dxkb-config-root=/usr/share/X11/xkb \
+        -Dx-locale-root=/usr/share/X11/locale \
+        -Dprefix=/output \
+        -Dc_args="-Wl,-z,max-page-size=16384" \
+        -Dcpp_args="-Wl,-z,max-page-size=16384" && \
+    meson compile -C build/ && \
+    meson install -C build/

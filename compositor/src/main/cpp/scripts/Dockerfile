@@ -79,8 +79,8 @@ RUN cd /libxkbcommon && \
         -Denable-x11=false \
         -Denable-xkbregistry=false \
         -Denable-bash-completion=false \
-        -Dxkb-config-root=/usr/share/X11/xkb \
-        -Dx-locale-root=/usr/share/X11/locale \
+        -Dxkb-config-root=/data/data/app.polarbear/files/archlinux-aarch64/usr/share/X11/xkb \
+        -Dx-locale-root=/data/data/app.polarbear/files/archlinux-aarch64/usr/share/X11/locale \
         -Dprefix=/output \
         -Dc_args="-Wl,-z,max-page-size=16384" \
         -Dcpp_args="-Wl,-z,max-page-size=16384" && \

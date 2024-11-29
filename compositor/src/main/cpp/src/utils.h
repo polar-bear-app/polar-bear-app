@@ -8,7 +8,7 @@
 
 using namespace std;
 
-int create_unix_socket(const std::string &socket_path);
+int create_unix_socket(const string &socket_path);
 
 void close_unix_socket(int fd);
 

@@ -10,13 +10,14 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <android/log.h>
+#include <sys/mman.h>
 
 #define LOG_TAG "PolarBearCompositorUtils"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 using namespace std;
 
-int create_unix_socket(const string &socket_path) {
+int create_unix_socket(const string &socket_name) {
     int sock_fd;
     struct sockaddr_un addr;
 
@@ -32,6 +33,8 @@ int create_unix_socket(const string &socket_path) {
     addr.sun_family = AF_UNIX;
 
     // Copy the socket path to the address structure
+    auto socket_path =
+            string("/data/data/app.polarbear/files/archlinux-aarch64/tmp/") + socket_name;
     strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
     addr.sun_path[sizeof(addr.sun_path) - 1] = '\0'; // Ensure null termination
 

@@ -26,20 +26,20 @@ project("compositor")
 # used in the AndroidManifest.xml file.
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
-        ${CMAKE_SOURCE_DIR}/wayland/build/src/xdg-shell.c
-        main.cpp
-        compositor.cpp
-        utils.cpp
-        data.cpp)
+        libs/include/xdg-shell.c
+        src/main.cpp
+        src/compositor.cpp
+        src/utils.cpp
+        src/data.cpp)
 
-include_directories(${CMAKE_SOURCE_DIR}/wayland/build/src
-        ${CMAKE_SOURCE_DIR}/wayland/src)
+include_directories(libs/include)
 
 # Specifies libraries CMake should link to your target library. You
 # can link libraries from various origins, such as libraries defined in this
 # build script, prebuilt third-party libraries, or Android system libraries.
 target_link_libraries(${CMAKE_PROJECT_NAME}
         # List libraries link to the target library
-        ${CMAKE_SOURCE_DIR}/wayland/build/src/libwayland-server.so
+        ${CMAKE_SOURCE_DIR}/libs/lib/libwayland-server.so
+        ${CMAKE_SOURCE_DIR}/libs/lib/libxkbcommon.so
         android
         log)

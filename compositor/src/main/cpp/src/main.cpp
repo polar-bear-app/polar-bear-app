@@ -5,10 +5,9 @@
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 
-#include "wayland/src/wayland-server.h"
+#include "wayland-server.h"
 #include "compositor.h"
 #include "utils.h"
-#include "wayland/tests/test-compositor.h"
 #include "data.h"
 
 #define LOG_TAG "PolarBearCompositor"

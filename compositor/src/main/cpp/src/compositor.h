@@ -8,7 +8,7 @@
 
 using namespace std;
 
-string implement(const string &socket_name);
+const string implement(const string &socket_name);
 
 void run(const function<string(const string &, const vector<string> &)> &callJVM);
 

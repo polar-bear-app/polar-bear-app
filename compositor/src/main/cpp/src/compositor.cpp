@@ -4,16 +4,19 @@
 #include <thread>
 #include <string>
 #include <cassert>
-
 #include <jni.h>
 #include <unistd.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
+#include <android/sharedmem.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 
 #include "wayland-server.h"
 #include "xdg-shell.h"
+#include "xkbcommon/xkbcommon.h"
+
 #include "utils.h"
 #include "data.h"
 
@@ -381,7 +384,26 @@ static const struct wl_seat_interface seat_impl = {
 //                                             seat->compositor->kb_repeat_delay);
             }
 
-//            wl_keyboard_send_keymap(keyboard, keyboard);
+            // send keymap
+
+            /* We need to prepare an XKB keymap and assign it to the keyboard. This
+             * assumes the defaults (e.g. layout = "us"). */
+            struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+            struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
+                                                                  XKB_KEYMAP_COMPILE_NO_FLAGS);
+            struct xkb_state *xkb_state = xkb_state_new(keymap);
+
+            char *keymap_str = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+            size_t keymap_size = strlen(keymap_str) + 1;
+
+            int fd = ASharedMemory_create("xkb_keymap", keymap_size); // By default it has PROT_READ | PROT_WRITE | PROT_EXEC.
+            void *dst = mmap(NULL, keymap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            assert(dst != MAP_FAILED);
+            memcpy(dst, keymap_str, keymap_size);
+            munmap(dst, keymap_size);
+
+            ASharedMemory_setProt(fd, PROT_READ); // limit access to read only
+            wl_keyboard_send_keymap(keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, keymap_size);
         },
         .get_touch = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto touch = wl_resource_create(client, &wl_touch_interface,
@@ -396,15 +418,13 @@ static const struct wl_seat_interface seat_impl = {
 };
 
 
-wl_display *setup_compositor(const char *socket_name) {
+wl_display *setup_compositor(const string socket_name) {
     struct wl_display *wl_display = wl_display_create();
     if (!wl_display) {
         LOGI("Unable to create Wayland display.");
         return nullptr;
     }
-    auto socket_path =
-            string("/data/data/app.polarbear/files/archlinux-aarch64/tmp/") + socket_name;
-    int sock_fd = create_unix_socket(socket_path);
+    int sock_fd = create_unix_socket(socket_name);
     if (sock_fd < 0) {
         LOGI("Failed to create Unix socket.");
         return nullptr;
@@ -419,7 +439,7 @@ wl_display *setup_compositor(const char *socket_name) {
     return wl_display;
 }
 
-string implement(const string &socket_name) {
+const string implement(const string &socket_name) {
     auto wl_display = setup_compositor(socket_name.c_str());
 
     state.display = wl_display;

@@ -319,7 +319,7 @@ class MainActivity : ComponentActivity() {
                             // Translate modifiers and send modifiers event
 //                            translateAndSendModifiers(metaState)
 
-                            true // Consume the event
+                            false // Consume the event
                         }
 
                         holder.addCallback(object : SurfaceHolder.Callback {
@@ -339,10 +339,13 @@ class MainActivity : ComponentActivity() {
                             }
                         })
                     }
+
                     // Capture keyboard events
-                    surfaceView.focusable = View.FOCUSABLE;
-                    surfaceView.isFocusableInTouchMode = true;
-                    surfaceView.requestFocus();
+                    if (view.childCount == 0) {
+                        surfaceView.focusable = View.FOCUSABLE;
+                        surfaceView.isFocusableInTouchMode = true;
+                        surfaceView.requestFocus();
+                    }
 
                     // Add the SurfaceView to the FrameLayout (Stacking them on top of each other)
                     view.addView(surfaceView, 0)

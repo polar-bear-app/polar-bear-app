@@ -38,7 +38,7 @@ KeyboardEventData convertToKeyboardEventData(JNIEnv *env, jobject eventData) {
 
     // Fill in the struct fields
     data.action = env->GetIntField(eventData, actionField);
-    data.scancode = 8 + env->GetIntField(eventData, scancodeField);
+    data.scancode = env->GetIntField(eventData, scancodeField);
     data.metaState = env->GetIntField(eventData, metaStateField);
     data.state = env->GetIntField(eventData, stateField);
     data.timestamp = get_current_timestamp();

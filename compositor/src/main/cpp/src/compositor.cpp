@@ -28,7 +28,7 @@ using namespace std;
 struct PolarBearSurface {
     ANativeWindow *androidNativeWindow = nullptr;
     wl_shm_buffer *waylandBuffer = nullptr;
-    wl_resource *resource = nullptr;
+    wl_resource *wl_surface = nullptr;
     wl_resource *xdg_surface = nullptr;
     wl_resource *xdg_toplevel_surface = nullptr;
 };
@@ -45,6 +45,7 @@ struct PolarBearState {
     wl_resource *keyboard;
     wl_resource *pointer;
     int32_t touchDownId;
+    bool sent_enter = false;
 };
 
 static PolarBearState state;
@@ -69,7 +70,7 @@ void send_configures(const PolarBearSurface &surface) {
                                    wl_display_next_serial(
                                            state.display));
 
-        wl_surface_send_enter(surface.resource, state.output);
+        wl_surface_send_enter(surface.wl_surface, state.output);
     } else {
         wl_display_flush_clients(state.display);
     }
@@ -178,9 +179,9 @@ static const struct wl_compositor_interface compositor_impl = {
             PolarBearSurface surface;
 
             // Wayland protocol logic
-            surface.resource = wl_resource_create(client, &wl_surface_interface,
-                                                  wl_resource_get_version(resource), id);
-            wl_resource_set_implementation(surface.resource, &surface_impl,
+            surface.wl_surface = wl_resource_create(client, &wl_surface_interface,
+                                                    wl_resource_get_version(resource), id);
+            wl_resource_set_implementation(surface.wl_surface, &surface_impl,
                                            nullptr, nullptr);
 
             state.surfaces.emplace(id, surface);
@@ -396,7 +397,8 @@ static const struct wl_seat_interface seat_impl = {
             char *keymap_str = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
             size_t keymap_size = strlen(keymap_str) + 1;
 
-            int fd = ASharedMemory_create("xkb_keymap", keymap_size); // By default it has PROT_READ | PROT_WRITE | PROT_EXEC.
+            int fd = ASharedMemory_create("xkb_keymap",
+                                          keymap_size); // By default it has PROT_READ | PROT_WRITE | PROT_EXEC.
             void *dst = mmap(NULL, keymap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
             assert(dst != MAP_FAILED);
             memcpy(dst, keymap_str, keymap_size);
@@ -582,7 +584,7 @@ void set_surface(uint32_t id, ANativeWindow *pWindow) {
 
 void handle_touch_event(uint32_t surface_id, TouchEventData event) {
     if (state.touch != nullptr) {
-        auto surface = state.surfaces[surface_id].resource;
+        auto surface = state.surfaces[surface_id].wl_surface;
 
         // Convert coordinates to wl_fixed_t format
         wl_fixed_t x_fixed = wl_fixed_from_double(static_cast<double>(event.x));
@@ -628,8 +630,18 @@ void handle_touch_event(uint32_t surface_id, TouchEventData event) {
 
 void handle_keyboard_event(uint32_t surface_id, KeyboardEventData event) {
     if (state.keyboard != nullptr) {
-        auto surface = state.surfaces[surface_id].resource;
+        if (!state.sent_enter) {
+            state.sent_enter = true;
+            auto surface = state.surfaces[surface_id].wl_surface;
+            struct wl_array keys = {.size = 0};
+            wl_keyboard_send_enter(state.keyboard, wl_display_next_serial(state.display), surface,
+                                   &keys);
+        }
+
         auto serial = wl_display_next_serial(state.display);
-        wl_keyboard_send_key(state.keyboard, serial, event.timestamp, event.scancode, event.state);
+        wl_keyboard_send_key(state.keyboard, serial, event.timestamp, event.scancode + 8,
+                             event.state);
+
+        wl_display_flush_clients(state.display);
     }
 }

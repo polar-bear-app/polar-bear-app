@@ -31,15 +31,13 @@ KeyboardEventData convertToKeyboardEventData(JNIEnv *env, jobject eventData) {
 
     // Get the class and field IDs
     jclass eventClass = env->GetObjectClass(eventData);
-    jfieldID actionField = env->GetFieldID(eventClass, "action", "I");
-    jfieldID scancodeField = env->GetFieldID(eventClass, "scancode", "I");
-    jfieldID metaStateField = env->GetFieldID(eventClass, "metaState", "I");
+    jfieldID keyCodeField = env->GetFieldID(eventClass, "keyCode", "I");
+    jfieldID scanCodeField = env->GetFieldID(eventClass, "scanCode", "I");
     jfieldID stateField = env->GetFieldID(eventClass, "state", "I");
 
     // Fill in the struct fields
-    data.action = env->GetIntField(eventData, actionField);
-    data.scancode = env->GetIntField(eventData, scancodeField);
-    data.metaState = env->GetIntField(eventData, metaStateField);
+    data.keyCode = env->GetIntField(eventData, keyCodeField);
+    data.scanCode = env->GetIntField(eventData, scanCodeField);
     data.state = env->GetIntField(eventData, stateField);
     data.timestamp = get_current_timestamp();
 

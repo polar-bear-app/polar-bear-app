@@ -315,10 +315,6 @@ class MainActivity : ComponentActivity() {
                             // Send Wayland key event
                             val data = keyboardEventToData(event)
                             mainService!!.nativeLib.sendKeyboardEvent(surface.id, data)
-
-                            // Translate modifiers and send modifiers event
-//                            translateAndSendModifiers(metaState)
-
                             false // Consume the event
                         }
 

@@ -15,9 +15,8 @@ struct TouchEventData {
 };
 
 struct KeyboardEventData {
-    int action;
-    int scancode;
-    int metaState;
+    int keyCode;
+    int scanCode;
     int state;
     long timestamp;
 };

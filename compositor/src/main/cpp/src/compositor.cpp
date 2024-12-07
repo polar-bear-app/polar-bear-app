@@ -23,6 +23,17 @@
 #define LOG_TAG "PolarBearCompositorImplementations"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
+#define KEYCODE_SHIFT_LEFT 59
+#define KEYCODE_SHIFT_RIGHT 60
+#define KEYCODE_CAPS_LOCK 115
+#define KEYCODE_CTRL_LEFT 113
+#define KEYCODE_CTRL_RIGHT 114
+#define KEYCODE_ALT_LEFT 57
+#define KEYCODE_ALT_RIGHT 58
+#define KEYCODE_NUM_LOCK 143
+#define KEYCODE_META_LEFT 117
+#define KEYCODE_META_RIGHT 118
+
 using namespace std;
 
 struct PolarBearSurface {
@@ -33,27 +44,36 @@ struct PolarBearSurface {
     wl_resource *xdg_toplevel_surface = nullptr;
 };
 
+struct PolarBearKeyboard {
+    xkb_context *context = nullptr;
+    xkb_keymap *keymap = nullptr;
+    xkb_state *state = nullptr;
+    int modsDepressed = 0;
+    int modsLatched = 0;
+    int modsLocked = 0;
+    wl_resource *wl_keyboard = nullptr;
+};
+
 struct PolarBearState {
     unordered_map<uint32_t, PolarBearSurface> surfaces;
     function<void(const string &, const vector<string> &)> callJVM;
+    PolarBearKeyboard keyboard;
+    uint32_t active_surface = 0;
 
     // to be structured
     wl_display *display;
     wl_resource *output;
     wl_resource *seat;
     wl_resource *touch;
-    wl_resource *keyboard;
     wl_resource *pointer;
     int32_t touchDownId;
-    bool sent_enter = false;
 };
 
 static PolarBearState state;
 
 void send_configures(const PolarBearSurface &surface) {
-    if (surface.xdg_surface != nullptr
-        && surface.xdg_toplevel_surface != nullptr
-        && surface.androidNativeWindow != nullptr) {
+    if (surface.xdg_surface != nullptr && surface.xdg_toplevel_surface != nullptr &&
+        surface.androidNativeWindow != nullptr) {
         // Send toplevel configure
         struct wl_array states;
         wl_array_init(&states);
@@ -73,6 +93,16 @@ void send_configures(const PolarBearSurface &surface) {
         wl_surface_send_enter(surface.wl_surface, state.output);
     } else {
         wl_display_flush_clients(state.display);
+    }
+}
+
+void send_keyboard_enter_surface() {
+    if (state.keyboard.wl_keyboard != nullptr && state.active_surface != 0) {
+        struct wl_array keys = {.size = 0};
+        wl_keyboard_send_enter(state.keyboard.wl_keyboard,
+                               wl_display_next_serial(state.display),
+                               state.surfaces[state.active_surface].wl_surface,
+                               &keys);
     }
 }
 
@@ -171,8 +201,7 @@ static const struct wl_region_interface region_impl = {
         [](struct wl_client *client, struct wl_resource *resource,
            int32_t x, int32_t y, int32_t width, int32_t height) {
             LOGI("region_subtract");
-        }
-};
+        }};
 
 static const struct wl_compositor_interface compositor_impl = {
         .create_surface = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
@@ -188,8 +217,7 @@ static const struct wl_compositor_interface compositor_impl = {
             // Polar Bear logic
             state.callJVM("createSurface", {to_string(id)}); // Tell Kotlin to create a SurfaceView
         },
-        .create_region = [](struct wl_client *client,
-                            struct wl_resource *resource, uint32_t id) {
+        .create_region = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto region =
                     wl_resource_create(client, &wl_region_interface, 1, id);
             if (region == nullptr) {
@@ -198,8 +226,7 @@ static const struct wl_compositor_interface compositor_impl = {
                 return;
             }
             wl_resource_set_implementation(region, &region_impl, nullptr, nullptr);
-        }
-};
+        }};
 
 static const struct xdg_toplevel_interface xdg_toplevel_impl = {
 
@@ -210,15 +237,11 @@ static const struct xdg_toplevel_interface xdg_toplevel_impl = {
 
         .set_title = [](struct wl_client *wl_client,
                         struct wl_resource *resource,
-                        const char *title) {
-            LOGI("set_title %s", title);
-        },
+                        const char *title) { LOGI("set_title %s", title); },
 
         .set_app_id = [](struct wl_client *wl_client,
                          struct wl_resource *resource,
-                         const char *app_id) {
-            LOGI("set_app_id %s", app_id);
-        },
+                         const char *app_id) { LOGI("set_app_id %s", app_id); },
 
         .show_window_menu = [](struct wl_client *client, struct wl_resource *resource,
                                struct wl_resource *seat,
@@ -243,8 +266,7 @@ static const struct xdg_toplevel_interface xdg_toplevel_impl = {
 
         .set_fullscreen = [](struct wl_client *wl_client,
                              struct wl_resource *resource,
-                             struct wl_resource *output_resource) {
-        },
+                             struct wl_resource *output_resource) {},
 
         .unset_fullscreen = [](struct wl_client *client, struct wl_resource *resource) {},
 
@@ -272,7 +294,9 @@ static const struct xdg_surface_interface xdg_surface_impl = {
             assert(surface != state.surfaces.end());
             surface->second.xdg_toplevel_surface = res;
 
+            state.active_surface = surface->first;
             send_configures(surface->second);
+            send_keyboard_enter_surface();
         },
 
         .get_popup = [](struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -283,12 +307,12 @@ static const struct xdg_surface_interface xdg_surface_impl = {
         .set_window_geometry = [](struct wl_client *client, struct wl_resource *resource, int32_t x,
                                   int32_t y,
                                   int32_t width, int32_t height) {
-//            assert(false);
+            //            assert(false);
         },
 
         .ack_configure = [](struct wl_client *client, struct wl_resource *resource,
                             uint32_t serial) {
-//            assert(false);
+            //            assert(false);
         },
 
 };
@@ -299,21 +323,20 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
         },
         .create_positioner = [](struct wl_client *wl_client, struct wl_resource *wl_resource,
                                 uint32_t id) {
-//            auto resource =
-//                    wl_resource_create(wl_client,
-//                                       &xdg_positioner_interface,
-//                                       wl_resource_get_version(wl_resource), id);
-//            if (resource == NULL) {
-//                wl_client_post_no_memory(wl_client);
-//                return;
-//            }
-//            wl_resource_set_implementation(resource,
-//                                           &weston_desktop_xdg_positioner_implementation,
-//                                           positioner, weston_desktop_xdg_positioner_destroy);
+            //            auto resource =
+            //                    wl_resource_create(wl_client,
+            //                                       &xdg_positioner_interface,
+            //                                       wl_resource_get_version(wl_resource), id);
+            //            if (resource == NULL) {
+            //                wl_client_post_no_memory(wl_client);
+            //                return;
+            //            }
+            //            wl_resource_set_implementation(resource,
+            //                                           &weston_desktop_xdg_positioner_implementation,
+            //                                           positioner, weston_desktop_xdg_positioner_destroy);
         },
         .get_xdg_surface = [](struct wl_client *wl_client, struct wl_resource *xdg_wm_base_resource,
-                              uint32_t id,
-                              struct wl_resource *wl_surface_resource) {
+                              uint32_t id, struct wl_resource *wl_surface_resource) {
             auto resource = wl_resource_create(wl_client,
                                                &xdg_surface_interface,
                                                wl_resource_get_version(wl_surface_resource),
@@ -322,9 +345,8 @@ static const struct xdg_wm_base_interface xdg_shell_impl = {
             assert(state.surfaces.count(wl_surface_resource->object.id) > 0);
             state.surfaces[wl_surface_resource->object.id].xdg_surface = resource;
         },
-        .pong = [](struct wl_client *wl_client, struct wl_resource *resource, uint32_t serial) {
-            LOGI("pong");
-        },
+        .pong = [](struct wl_client *wl_client, struct wl_resource *resource,
+                   uint32_t serial) { LOGI("pong"); },
 };
 
 static const struct wl_output_interface output_impl = {
@@ -339,26 +361,21 @@ static const struct wl_pointer_interface pointer_impl = {
                          uint32_t serial,
                          struct wl_resource *surface,
                          int32_t hotspot_x,
-                         int32_t hotspot_y) {
-            LOGI("wl_pointer_interface@set_cursor");
-        },
+                         int32_t hotspot_y) { LOGI("wl_pointer_interface@set_cursor"); },
         .release = [](struct wl_client *client,
                       struct wl_resource *resource) {
 
-        }
-};
+        }};
 
 static const struct wl_touch_interface touch_impl = {
         .release = [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
-        }
-};
+        }};
 
 static const struct wl_keyboard_interface keyboard_interface = {
         .release = [](struct wl_client *client, struct wl_resource *resource) {
             wl_resource_destroy(resource);
-        }
-};
+        }};
 
 static const struct wl_seat_interface seat_impl = {
         .get_pointer = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
@@ -377,7 +394,7 @@ static const struct wl_seat_interface seat_impl = {
             wl_resource_set_implementation(keyboard, &keyboard_interface,
                                            nullptr, nullptr);
 
-            state.keyboard = keyboard;
+            state.keyboard.wl_keyboard = keyboard;
 
             if (wl_resource_get_version(keyboard) >= WL_KEYBOARD_REPEAT_INFO_SINCE_VERSION) {
 //                wl_keyboard_send_repeat_info(keyboard,
@@ -389,12 +406,13 @@ static const struct wl_seat_interface seat_impl = {
 
             /* We need to prepare an XKB keymap and assign it to the keyboard. This
              * assumes the defaults (e.g. layout = "us"). */
-            struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-            struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
-                                                                  XKB_KEYMAP_COMPILE_NO_FLAGS);
-            struct xkb_state *xkb_state = xkb_state_new(keymap);
+            state.keyboard.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+            state.keyboard.keymap = xkb_keymap_new_from_names(state.keyboard.context, NULL,
+                                                              XKB_KEYMAP_COMPILE_NO_FLAGS);
+            state.keyboard.state = xkb_state_new(state.keyboard.keymap);
 
-            char *keymap_str = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+            char *keymap_str = xkb_keymap_get_as_string(state.keyboard.keymap,
+                                                        XKB_KEYMAP_FORMAT_TEXT_V1);
             size_t keymap_size = strlen(keymap_str) + 1;
 
             int fd = ASharedMemory_create("xkb_keymap",
@@ -406,6 +424,7 @@ static const struct wl_seat_interface seat_impl = {
 
             ASharedMemory_setProt(fd, PROT_READ); // limit access to read only
             wl_keyboard_send_keymap(keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, keymap_size);
+            send_keyboard_enter_surface();
         },
         .get_touch = [](struct wl_client *client, struct wl_resource *resource, uint32_t id) {
             auto touch = wl_resource_create(client, &wl_touch_interface,
@@ -418,7 +437,6 @@ static const struct wl_seat_interface seat_impl = {
         },
         .release = [](struct wl_client *client, struct wl_resource *resource) {},
 };
-
 
 wl_display *setup_compositor(const string socket_name) {
     struct wl_display *wl_display = wl_display_create();
@@ -458,8 +476,7 @@ const string implement(const string &socket_name) {
                              return;
                          }
                          wl_resource_set_implementation(resource, &compositor_impl, nullptr, NULL);
-                     }
-    );
+                     });
 
     // XDG Shell
     wl_global_create(wl_display, &xdg_wm_base_interface,
@@ -486,78 +503,81 @@ const string implement(const string &socket_name) {
     // Output
     wl_global_create(wl_display,
                      &wl_output_interface, 4,
-                     nullptr, [](struct wl_client *client,
-                                 void *data, uint32_t version, uint32_t id) {
+                     nullptr,
+                     [](struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 
-                auto resource = wl_resource_create(client, &wl_output_interface,
-                                                   version, id);
+                         auto resource = wl_resource_create(client, &wl_output_interface,
+                                                            version, id);
 
-                wl_resource_set_implementation(resource, &output_impl, nullptr,
-                                               nullptr);
+                         wl_resource_set_implementation(resource, &output_impl, nullptr,
+                                                        nullptr);
 
-                state.output = resource;
+                         state.output = resource;
 
-                wl_output_send_geometry(resource,
-                                        0,
-                                        0,
-                                        1024,
-                                        768,
-                                        WL_OUTPUT_SUBPIXEL_NONE,
-                                        "Polar Bear", "Polar Bear Virtual Wayland Display",
-                                        WL_OUTPUT_TRANSFORM_NORMAL);
-                if (version >= WL_OUTPUT_SCALE_SINCE_VERSION)
-                    wl_output_send_scale(resource,
-                                         1);
+                         wl_output_send_geometry(resource,
+                                                 0,
+                                                 0,
+                                                 1024,
+                                                 768,
+                                                 WL_OUTPUT_SUBPIXEL_NONE,
+                                                 "Polar Bear", "Polar Bear Virtual Wayland Display",
+                                                 WL_OUTPUT_TRANSFORM_NORMAL);
+                         if (version >= WL_OUTPUT_SCALE_SINCE_VERSION)
+                             wl_output_send_scale(resource,
+                                                  1);
 
-                wl_output_send_mode(resource,
-                                    WL_OUTPUT_MODE_CURRENT,
-                                    1024,
-                                    768,
-                                    60 * 1000LL);
+                         wl_output_send_mode(resource,
+                                             WL_OUTPUT_MODE_CURRENT,
+                                             1024,
+                                             768,
+                                             60 * 1000LL);
 
-                if (version >= WL_OUTPUT_NAME_SINCE_VERSION)
-                    wl_output_send_name(resource, "Polar Bear");
+                         if (version >= WL_OUTPUT_NAME_SINCE_VERSION)
+                             wl_output_send_name(resource, "Polar Bear");
 
-                if (version >= WL_OUTPUT_DESCRIPTION_SINCE_VERSION)
-                    wl_output_send_description(resource, "Polar Bear Virtual Wayland Display");
+                         if (version >= WL_OUTPUT_DESCRIPTION_SINCE_VERSION)
+                             wl_output_send_description(resource,
+                                                        "Polar Bear Virtual Wayland Display");
 
-                if (version >= WL_OUTPUT_DONE_SINCE_VERSION)
-                    wl_output_send_done(resource);
-            });
+                         if (version >= WL_OUTPUT_DONE_SINCE_VERSION)
+                             wl_output_send_done(resource);
+                     });
 
     // Seat
     wl_global_create(wl_display,
                      &wl_seat_interface, wl_seat_interface.version,
-                     nullptr, [](struct wl_client *client,
-                                 void *data, uint32_t version, uint32_t id) {
+                     nullptr,
+                     [](struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 
-                auto resource = wl_resource_create(client, &wl_seat_interface,
-                                                   version, id);
+                         auto resource = wl_resource_create(client, &wl_seat_interface,
+                                                            version, id);
 
-                wl_resource_set_implementation(resource, &seat_impl, nullptr,
-                                               nullptr);
+                         wl_resource_set_implementation(resource, &seat_impl, nullptr,
+                                                        nullptr);
 
 
-                if (version >= WL_SEAT_NAME_SINCE_VERSION)
-                    wl_seat_send_name(resource, "Polar Bear Virtual Input");
+                         if (version >= WL_SEAT_NAME_SINCE_VERSION)
+                             wl_seat_send_name(resource, "Polar Bear Virtual Input");
 
-                wl_seat_send_capabilities(resource,
-                                          WL_SEAT_CAPABILITY_TOUCH | WL_SEAT_CAPABILITY_KEYBOARD);
+                         wl_seat_send_capabilities(resource,
+                                                   WL_SEAT_CAPABILITY_TOUCH |
+                                                   WL_SEAT_CAPABILITY_KEYBOARD);
 
-                state.seat = resource;
-            });
+                         state.seat = resource;
+                     });
 
     // SHM
     wl_display_init_shm(wl_display);
 
     // Log
-    wl_display_add_protocol_logger(wl_display, [](void *user_data,
-                                                  enum wl_protocol_logger_type direction,
-                                                  const struct wl_protocol_logger_message *message) {
-        LOGI("[LOG] %s %s@%d:%s", direction == WL_PROTOCOL_LOGGER_REQUEST ? "<-" : "->",
-             message->resource->object.interface->name,
-             message->resource->object.id, message->message->name);
-    }, nullptr);
+    wl_display_add_protocol_logger(wl_display,
+                                   [](void *user_data, enum wl_protocol_logger_type direction,
+                                      const struct wl_protocol_logger_message *message) {
+                                       LOGI("[LOG] %s %s@%d:%s",
+                                            direction == WL_PROTOCOL_LOGGER_REQUEST ? "<-" : "->",
+                                            message->resource->object.interface->name,
+                                            message->resource->object.id, message->message->name);
+                                   }, nullptr);
 
     return socket_name;
 }
@@ -605,10 +625,10 @@ void handle_touch_event(uint32_t surface_id, TouchEventData event) {
                 wl_touch_send_down(state.touch, serial, event.timestamp, surface,
                                    state.touchDownId,
                                    x_fixed, y_fixed);
-//            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
-//            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
-//            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
-//            wl_pointer_send_frame(state.pointer);
+                //            wl_pointer_send_enter(state.pointer, serial, surface, x_fixed, y_fixed);
+                //            wl_pointer_send_motion(state.pointer, event.timestamp, x_fixed, y_fixed);
+                //            wl_pointer_send_button(state.pointer, serial, event.timestamp, 0, 0);
+                //            wl_pointer_send_frame(state.pointer);
                 wl_display_flush_clients(state.display);
                 break;
 
@@ -629,19 +649,87 @@ void handle_touch_event(uint32_t surface_id, TouchEventData event) {
 }
 
 void handle_keyboard_event(uint32_t surface_id, KeyboardEventData event) {
-    if (state.keyboard != nullptr) {
-        if (!state.sent_enter) {
-            state.sent_enter = true;
-            auto surface = state.surfaces[surface_id].wl_surface;
-            struct wl_array keys = {.size = 0};
-            wl_keyboard_send_enter(state.keyboard, wl_display_next_serial(state.display), surface,
-                                   &keys);
-        }
-
+    auto keyboard = &state.keyboard;
+    if (keyboard->wl_keyboard != nullptr) {
         auto serial = wl_display_next_serial(state.display);
-        wl_keyboard_send_key(state.keyboard, serial, event.timestamp, event.scancode + 8,
+        wl_keyboard_send_key(keyboard->wl_keyboard, serial, event.timestamp, event.scanCode,
                              event.state);
 
+        int mask = 0;
+        bool isKeyDown = (event.state == WL_KEYBOARD_KEY_STATE_PRESSED);
+
+        // Switch case for handling modifier key presses and releases
+        switch (event.keyCode) {
+            case KEYCODE_SHIFT_LEFT:
+            case KEYCODE_SHIFT_RIGHT:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_SHIFT));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_SHIFT));
+                }
+                break;
+
+            case KEYCODE_CAPS_LOCK:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_CAPS));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_CAPS));
+                }
+                break;
+
+            case KEYCODE_CTRL_LEFT:
+            case KEYCODE_CTRL_RIGHT:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_CTRL));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_CTRL));
+                }
+                break;
+
+            case KEYCODE_ALT_LEFT:
+            case KEYCODE_ALT_RIGHT:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_ALT));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_ALT));
+                }
+                break;
+
+            case KEYCODE_NUM_LOCK:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_NUM));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_NUM));
+                }
+                break;
+
+            case KEYCODE_META_LEFT:
+            case KEYCODE_META_RIGHT:
+                if (isKeyDown) {
+                    keyboard->modsDepressed |= (1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_LOGO));
+                } else {
+                    keyboard->modsDepressed &= ~(1
+                            << xkb_keymap_mod_get_index(keyboard->keymap, XKB_MOD_NAME_LOGO));
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        wl_keyboard_send_modifiers(keyboard->wl_keyboard, serial, keyboard->modsDepressed,
+                                   keyboard->modsLatched, keyboard->modsLocked, 0);
         wl_display_flush_clients(state.display);
     }
 }

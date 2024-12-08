@@ -4,16 +4,19 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,9 +45,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -59,9 +62,11 @@ import kotlin.math.min
 
 
 class MainActivity : ComponentActivity() {
+    private val DOCUMENTATION_URL = "https://docusaurus.io/docs"
     private var mainService: MainService? = null
     private var serviceBound by mutableStateOf(false)
-    private var panelOffset by mutableStateOf(0f) // This will control the offset of the panel
+    private var leftPanelOffset by mutableStateOf(0f) // This will control the offset of the left panel
+    private var rightPanelOffset by mutableStateOf(0f) // This will control the offset of the right panel
     private var panelWidth by mutableStateOf(0.dp) // This will store the width of the panel
 
     private val serviceConnection = object : ServiceConnection {
@@ -77,10 +82,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun enableFullscreenImmersive() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            // Fallback for older versions
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        enableEdgeToEdge()
 
         setContent {
             // Set the panel width based on screen width
@@ -93,6 +111,8 @@ class MainActivity : ComponentActivity() {
 
             PolarBearApp()
         }
+
+        enableFullscreenImmersive()
 
         // Handle intent on initial launch
         if (intent.action == MainService.ACTION_LOGS) {
@@ -210,11 +230,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    fun OnboardingView() {
+        AndroidView(factory = { context ->
+            WebView(context).apply {
+                webViewClient = WebViewClient() // Ensures links open within the WebView
+                settings.javaScriptEnabled = true // Enable JavaScript if required by the website
+                loadUrl(DOCUMENTATION_URL)
+            }
+        })
+    }
+
     private fun revealRightPanel() {
         // Your logic to reveal the right panel
         // You may need to modify the state variable that controls the panel's visibility
         // For example:
-        panelOffset = 0f
+        rightPanelOffset = 0f
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -229,7 +260,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun PolarBearApp() {
-        val animatedPanelOffset by animateDpAsState(targetValue = panelOffset.dp)
+        val animatedLeftPanelOffset by animateDpAsState(targetValue = leftPanelOffset.dp)
+        val animatedRightPanelOffset by animateDpAsState(targetValue = rightPanelOffset.dp)
         PolarBearTheme {
             Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                 Box(modifier = Modifier
@@ -238,26 +270,68 @@ class MainActivity : ComponentActivity() {
                     .pointerInput(Unit) {
                         // Use awaitPointerEventScope to track pointers
                         awaitPointerEventScope {
+                            var initialPositions: List<Offset>? =
+                                null // To store the initial positions of the pointers
+                            var activePanel: String? =
+                                null // To track which panel is being manipulated
+
                             while (true) {
                                 val event = awaitPointerEvent() // Wait for a pointer event
+
                                 if (event.changes.size == 2) { // Check for two fingers
-                                    val dragAmount = event.changes[0].positionChange().x
-                                    // Only respond to two-finger swipes
-                                    if (event.changes[0].pressed && event.changes[1].pressed) {
-                                        this@MainActivity.panelOffset = max(
-                                            0f,
-                                            min(
-                                                panelWidth.toPx(),
-                                                this@MainActivity.panelOffset - dragAmount
+                                    if (initialPositions == null) {
+                                        // Record the initial positions of both pointers
+                                        initialPositions = event.changes.map { it.position }
+
+                                        // Determine the active panel based on the initial touch positions
+                                        val screenWidth =
+                                            this@MainActivity.resources.displayMetrics.widthPixels.toFloat()
+                                        val initialTouchX = initialPositions[0].x
+                                        activePanel =
+                                            if (initialTouchX < screenWidth / 2) "left" else "right"
+                                    } else {
+                                        // Calculate the movement of the pointers from their initial positions
+                                        val currentPositions = event.changes.map { it.position }
+                                        val movement = currentPositions[0].x - initialPositions[0].x
+
+                                        // Update the appropriate panel offset
+                                        if (activePanel == "left") {
+                                            this@MainActivity.leftPanelOffset = max(
+                                                0f,
+                                                min(
+                                                    panelWidth.toPx(),
+                                                    this@MainActivity.leftPanelOffset - movement
+                                                )
                                             )
-                                        ) // Limit panel offset between 0 and panelWidth
+                                        } else if (activePanel == "right") {
+                                            this@MainActivity.rightPanelOffset = max(
+                                                0f,
+                                                min(
+                                                    panelWidth.toPx(),
+                                                    this@MainActivity.rightPanelOffset + movement
+                                                )
+                                            )
+                                        }
+
+                                        // Update the initial positions for continuous dragging
+                                        initialPositions = currentPositions
                                     }
                                 }
+
                                 // Handle drag end
                                 if (event.changes.all { !it.pressed }) {
-                                    // Snap to open or closed based on drag distance
-                                    this@MainActivity.panelOffset =
-                                        if (this@MainActivity.panelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                    // Snap the active panel to open or closed based on its offset
+                                    if (activePanel == "left") {
+                                        this@MainActivity.leftPanelOffset =
+                                            if (this@MainActivity.leftPanelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                    } else if (activePanel == "right") {
+                                        this@MainActivity.rightPanelOffset =
+                                            if (this@MainActivity.rightPanelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                    }
+
+                                    // Reset variables for the next gesture
+                                    initialPositions = null
+                                    activePanel = null
                                 }
                             }
                         }
@@ -266,12 +340,24 @@ class MainActivity : ComponentActivity() {
                     if (serviceBound) {
                         SurfaceGroup()
                     }
-                    // Right panel, constant width with animated x-axis offset
+                    // Left panel for onboarding information during initial setup
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(panelWidth)
-                            .offset(x = animatedPanelOffset) // Animate the x-axis offset
+                            .offset(x = -animatedLeftPanelOffset) // Animate the x-axis offset
+                            .background(Color.DarkGray)
+                            .align(Alignment.CenterStart),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        OnboardingView()
+                    }
+                    // Right panel for logs
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(panelWidth)
+                            .offset(x = animatedRightPanelOffset) // Animate the x-axis offset
                             .background(Color.DarkGray)
                             .align(Alignment.CenterEnd),
                         contentAlignment = Alignment.Center

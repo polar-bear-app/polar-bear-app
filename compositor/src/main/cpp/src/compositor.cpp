@@ -59,6 +59,9 @@ struct PolarBearState {
     function<void(const string &, const vector<string> &)> callJVM;
     PolarBearKeyboard keyboard;
     uint32_t active_surface = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    int32_t scale = 1;
 
     // to be structured
     wl_display *display;
@@ -80,9 +83,9 @@ void send_configures(const PolarBearSurface &surface) {
         auto *s = static_cast<uint32_t *>(wl_array_add(&states,
                                                        sizeof(uint32_t)));
         *s = XDG_TOPLEVEL_STATE_FULLSCREEN;
-        xdg_toplevel_send_configure(surface.xdg_toplevel_surface, 1024,
-                                    768,
-                                    &states);
+        xdg_toplevel_send_configure(
+                surface.xdg_toplevel_surface, state.width, state.height, &states
+        );
         wl_array_release(&states);
 
         // Send xdg configure
@@ -517,19 +520,20 @@ const string implement(const string &socket_name) {
                          wl_output_send_geometry(resource,
                                                  0,
                                                  0,
-                                                 1024,
-                                                 768,
+                                                 state.width,
+                                                 state.height,
                                                  WL_OUTPUT_SUBPIXEL_NONE,
                                                  "Polar Bear", "Polar Bear Virtual Wayland Display",
                                                  WL_OUTPUT_TRANSFORM_NORMAL);
-                         if (version >= WL_OUTPUT_SCALE_SINCE_VERSION)
+                         if (version >= WL_OUTPUT_SCALE_SINCE_VERSION) {
                              wl_output_send_scale(resource,
-                                                  1);
+                                                  state.scale);
+                         }
 
                          wl_output_send_mode(resource,
                                              WL_OUTPUT_MODE_CURRENT,
-                                             1024,
-                                             768,
+                                             state.width,
+                                             state.height,
                                              60 * 1000LL);
 
                          if (version >= WL_OUTPUT_NAME_SINCE_VERSION)
@@ -591,6 +595,12 @@ void run(const function<string(const string &, const vector<string> &)> &callJVM
     wl_display_destroy(state.display);
 }
 
+void set_display_size(uint32_t width, uint32_t height, uint32_t scale) {
+    state.width = width;
+    state.height = height;
+    state.scale = scale;
+}
+
 void set_surface(uint32_t id, ANativeWindow *pWindow) {
     assert(state.surfaces.count(id));
 
@@ -648,7 +658,7 @@ void handle_touch_event(uint32_t surface_id, TouchEventData event) {
     }
 }
 
-void handle_keyboard_event(uint32_t surface_id, KeyboardEventData event) {
+void handle_keyboard_event(KeyboardEventData event) {
     auto keyboard = &state.keyboard;
     if (keyboard->wl_keyboard != nullptr) {
         auto serial = wl_display_next_serial(state.display);

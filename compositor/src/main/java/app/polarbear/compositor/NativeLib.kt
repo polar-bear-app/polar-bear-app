@@ -38,6 +38,11 @@ class NativeLib(private val eventHandler: NativeEventHandler) {
     external fun start(socketName: String): Unit;
 
     /**
+     * Set the display size of the compositor. This function should be called whenever the display size changes.
+     */
+    external fun setDisplaySize(width: Int, height: Int, scale: Int): Unit;
+
+    /**
      * MainActivity has created a SurfaceView which is ready to be used
      */
     external fun setSurface(id: Int, surface: Surface): Unit;
@@ -50,5 +55,5 @@ class NativeLib(private val eventHandler: NativeEventHandler) {
     /**
      * Send user keyboard events to the compositor.
      */
-    external fun sendKeyboardEvent(surfaceId: Int, event: KeyboardEventData): Unit;
+    external fun sendKeyboardEvent(event: KeyboardEventData): Unit;
 }

@@ -103,45 +103,33 @@ class MainService : Service(), NativeEventHandler {
         }
 
         val stopPendingIntent = PendingIntent.getService(
-            this,
-            0,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val logsPendingIntent = PendingIntent.getActivity(
-            this,
-            1,
-            logsIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this, 1, logsIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Arch Linux is running in the background.")
-            .setSmallIcon(R.drawable.ic_menu_info_details)
-            .setContentIntent(
+            .setSmallIcon(R.drawable.ic_menu_info_details).setContentIntent(
                 PendingIntent.getActivity(
                     this,
                     0,
                     contentIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-            )
-            .addAction(R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
-            .addAction(R.drawable.ic_menu_info_details, "Logs", logsPendingIntent)
-            .build()
+            ).addAction(R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
+            .addAction(R.drawable.ic_menu_info_details, "Logs", logsPendingIntent).build()
     }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Linux Background Service",
-            NotificationManager.IMPORTANCE_DEFAULT
+            CHANNEL_ID, "Linux Background Service", NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = "Notifications for Arch Linux is running in the background."
         }
-        val notificationManager =
-            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 
@@ -192,7 +180,7 @@ class MainService : Service(), NativeEventHandler {
 //            val command =
 //                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client dbus-run-session startplasma-wayland"
             val command =
-                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client weston --renderer=pixman --fullscreen"
+                "HOME=/root XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=$DISPLAY WAYLAND_DEBUG=client weston --scale=2 --renderer=pixman --fullscreen"
             execute(command, returnOnExit = false)
         } catch (error: SafeToRetryException) {
             addLogLine("*** *** ***")
@@ -216,29 +204,27 @@ class MainService : Service(), NativeEventHandler {
      * Start any command in the proot environment. Typically, we will start a Wayland compositor here.
      */
     private suspend fun execute(
-        command: String,
-        returnOnExit: Boolean = true,
-        ignoreLogs: Boolean = false
+        command: String, returnOnExit: Boolean = true, ignoreLogs: Boolean = false
     ) {
         val prootBin = "${this.applicationInfo.nativeLibraryDir}/proot.so"
         val rootFs = "${this.applicationInfo.dataDir}/files/archlinux-aarch64"
-        process(
-            listOf(
-                prootBin,
-                "-r", rootFs,
-                "-L",
-                "--link2symlink",
-                "--kill-on-exit",
-                "--root-id",
-                "--cwd=/root",
-                "--bind=/dev",
+        process(listOf(
+            prootBin,
+            "-r",
+            rootFs,
+            "-L",
+            "--link2symlink",
+            "--kill-on-exit",
+            "--root-id",
+            "--cwd=/root",
+            "--bind=/dev",
 //                "--bind=\"/dev/urandom:/dev/random\"",
-                "--bind=/proc",
+            "--bind=/proc",
 //                "--bind=\"/proc/self/fd:/dev/fd\"",
 //                "--bind=\"/proc/self/fd/0:/dev/stdin\"",
 //                "--bind=\"/proc/self/fd/1:/dev/stdout\"",
 //                "--bind=\"/proc/self/fd/2:/dev/stderr\"",
-                "--bind=/sys",
+            "--bind=/sys",
 //                "--bind=\"${rootFs}/proc/.loadavg:/proc/loadavg\"",
 //                "--bind=\"${rootFs}/proc/.stat:/proc/stat\"",
 //                "--bind=\"${rootFs}/proc/.uptime:/proc/uptime\"",
@@ -246,31 +232,30 @@ class MainService : Service(), NativeEventHandler {
 //                "--bind=\"${rootFs}/proc/.vmstat:/proc/vmstat\"",
 //                "--bind=\"${rootFs}/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap\"",
 //                "--bind=\"${rootFs}/sys/.empty:/sys/fs/selinux\"",
-                "/usr/bin/env", "-i",
-                "\"HOME=/root\"",
-                "\"LANG=C.UTF-8\"",
-                "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
-                "\"TERM=\${TERM-xterm-256color}\"",
-                "\"TMPDIR=/tmp\""
-            ) + if (returnOnExit) {
-                command.split(" ")
-            } else {
-                listOf("/bin/sh")
-            },
-            environment = mapOf(
-                "PROOT_LOADER" to this.applicationInfo.nativeLibraryDir + "/loader.so",
-                "PROOT_TMP_DIR" to this.applicationInfo.dataDir + "/files/archlinux-aarch64",
-            ), output = {
-                if (!ignoreLogs) {
-                    addLogLine(it)
-                }
-            }, input = {
-                if (!returnOnExit) {
-                    this.stdin = it.writer()
-                    this.flush(command)
-                }
+            "/usr/bin/env",
+            "-i",
+            "\"HOME=/root\"",
+            "\"LANG=C.UTF-8\"",
+            "\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+            "\"TERM=\${TERM-xterm-256color}\"",
+            "\"TMPDIR=/tmp\""
+        ) + if (returnOnExit) {
+            command.split(" ")
+        } else {
+            listOf("/bin/sh")
+        }, environment = mapOf(
+            "PROOT_LOADER" to this.applicationInfo.nativeLibraryDir + "/loader.so",
+            "PROOT_TMP_DIR" to this.applicationInfo.dataDir + "/files/archlinux-aarch64",
+        ), output = {
+            if (!ignoreLogs) {
+                addLogLine(it)
             }
-        )
+        }, input = {
+            if (!returnOnExit) {
+                this.stdin = it.writer()
+                this.flush(command)
+            }
+        })
     }
 
     private suspend fun installDependencies() {
@@ -284,10 +269,23 @@ class MainService : Service(), NativeEventHandler {
         if (!isPlasmaInstalled) {
             val pacmanLock = fsRoot.resolve("var/lib/pacman/db.lck")
             pacmanLock.delete(); // Previous installation could have failed, so delete the lock file before trying again
-            try {
-                execute("pacman -Syu plasma --noconfirm")
-            } catch (e: Exception) {
-                throw SafeToRetryException("An error occurred while installing the desktop environment using the Arch package manager. If the issue was related to network connectivity, it is safe to retry the installation once you have a stable network connection by reopening the app until it succeeds.")
+
+            val maxRetries = 5
+            var attempt = 1
+            while (attempt <= maxRetries) {
+                try {
+                    execute("pacman -Syu plasma --noconfirm")
+                    return // Exit the loop and function if successful
+                } catch (e: Exception) {
+                    addLogLine("Attempt $attempt of $maxRetries failed: ${e.message}")
+                    if (attempt == maxRetries) {
+                        // If it's the last attempt, rethrow the exception
+                        throw SafeToRetryException("An error occurred while installing the desktop environment using the Arch package manager. If the issue was related to network connectivity, it is safe to retry the installation once you have a stable network connection by reopening the app until it succeeds.")
+                    } else {
+                        addLogLine("Retrying...")
+                        attempt++
+                    }
+                }
             }
         }
     }
@@ -298,11 +296,9 @@ class MainService : Service(), NativeEventHandler {
     private suspend fun pacstrap() {
         // The file was renamed after packaging into APK
         val assetName = "archlinux-aarch64-pd-v4.6.0.tar.xz"
-        val tempTarFile =
-            File(
-                applicationContext.cacheDir,
-                "arch.tar"
-            )  // Temporary file to store the extracted tar
+        val tempTarFile = File(
+            applicationContext.cacheDir, "arch.tar"
+        )  // Temporary file to store the extracted tar
         // Pacstrap when there is no fs or the temp file is still there (the extraction progress wasn't finished)
         var shouldPacstrap = false
         if (!fsRoot.exists() || fsRoot.listFiles().isNullOrEmpty()) {

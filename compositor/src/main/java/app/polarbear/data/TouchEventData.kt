@@ -18,8 +18,8 @@ fun motionEventToData(event: MotionEvent, view: View): TouchEventData {
     val viewHeight = view.height
 
     // Define your target surface size
-    val surfaceWidth = 1024f
-    val surfaceHeight = 768f
+    val surfaceWidth = view.width
+    val surfaceHeight = view.height
 
     // Calculate the scale factors
     val scaleX = surfaceWidth / viewWidth

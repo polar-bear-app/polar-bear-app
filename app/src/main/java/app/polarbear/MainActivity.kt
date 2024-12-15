@@ -1,5 +1,6 @@
 package app.polarbear
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -48,7 +50,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -67,7 +71,8 @@ class MainActivity : ComponentActivity() {
     private var serviceBound by mutableStateOf(false)
     private var leftPanelOffset by mutableStateOf(0f) // This will control the offset of the left panel
     private var rightPanelOffset by mutableStateOf(0f) // This will control the offset of the right panel
-    private var panelWidth by mutableStateOf(0.dp) // This will store the width of the panel
+    private var rightPanelWidth by mutableStateOf(0.dp) // This will store the width of the panel
+    private var leftPanelWidth by mutableStateOf(0.dp) // This will store the width of the panel
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -91,8 +96,7 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             // Fallback for older versions
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
+            @Suppress("DEPRECATION") window.decorView.systemUiVisibility =
                 (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         }
     }
@@ -103,10 +107,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Set the panel width based on screen width
             val configuration = LocalConfiguration.current
-            val maxPanelWidth =
+            val maxRightPanelWidth =
                 (configuration.screenWidthDp / 2).dp // Maximum width is half of the screen width
-            panelWidth =
-                (500.dp).coerceAtMost(maxPanelWidth) // Set the panel width capped at half the screen width
+            rightPanelWidth =
+                (500.dp).coerceAtMost(maxRightPanelWidth) // Set the panel width capped at half the screen width
+            leftPanelWidth = configuration.screenWidthDp.dp - rightPanelWidth
 
 
             PolarBearApp()
@@ -148,33 +153,28 @@ class MainActivity : ComponentActivity() {
                 openAlertDialog.value = true
             }) {
             if (openAlertDialog.value) {
-                AlertDialog(
-                    onDismissRequest = { openAlertDialog.value = false },
+                AlertDialog(onDismissRequest = { openAlertDialog.value = false },
                     title = { Text("Input Prompt") },
                     text = {
-                        TextField(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester),
+                        TextField(modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
                             value = userInput.value,
                             onValueChange = { userInput.value = it },
-                            label = { Text("Enter something") }
-                        )
+                            label = { Text("Enter something") })
                     },
                     confirmButton = {
-                        Button(
-                            onClick = {
-                                openAlertDialog.value = false
-                                // Handle the user input here
-                                mainService!!.flush(
-                                    """
+                        Button(onClick = {
+                            openAlertDialog.value = false
+                            // Handle the user input here
+                            mainService!!.flush(
+                                """
                                         ${userInput.value}
                                         echo '# '
                                     """.trimIndent()
-                                )
-                                userInput.value = ""
-                            }
-                        ) {
+                            )
+                            userInput.value = ""
+                        }) {
                             Text("Flush")
                         }
                     },
@@ -182,8 +182,7 @@ class MainActivity : ComponentActivity() {
                         Button(onClick = { openAlertDialog.value = false }) {
                             Text("Cancel")
                         }
-                    }
-                )
+                    })
                 // Automatically focus the TextField after the dialog is shown
                 LaunchedEffect(openAlertDialog.value) {
                     if (openAlertDialog.value) {
@@ -288,7 +287,7 @@ class MainActivity : ComponentActivity() {
                                             this@MainActivity.resources.displayMetrics.widthPixels.toFloat()
                                         val initialTouchX = initialPositions[0].x
                                         activePanel =
-                                            if (initialTouchX < screenWidth / 2) "left" else "right"
+                                            if (initialTouchX <= leftPanelWidth.toPx()) "left" else if (initialTouchX >= rightPanelWidth.toPx()) "right" else ""
                                     } else {
                                         // Calculate the movement of the pointers from their initial positions
                                         val currentPositions = event.changes.map { it.position }
@@ -297,17 +296,15 @@ class MainActivity : ComponentActivity() {
                                         // Update the appropriate panel offset
                                         if (activePanel == "left") {
                                             this@MainActivity.leftPanelOffset = max(
-                                                0f,
-                                                min(
-                                                    panelWidth.toPx(),
+                                                0f, min(
+                                                    leftPanelWidth.toPx(),
                                                     this@MainActivity.leftPanelOffset - movement
                                                 )
                                             )
                                         } else if (activePanel == "right") {
                                             this@MainActivity.rightPanelOffset = max(
-                                                0f,
-                                                min(
-                                                    panelWidth.toPx(),
+                                                0f, min(
+                                                    rightPanelWidth.toPx(),
                                                     this@MainActivity.rightPanelOffset + movement
                                                 )
                                             )
@@ -323,10 +320,10 @@ class MainActivity : ComponentActivity() {
                                     // Snap the active panel to open or closed based on its offset
                                     if (activePanel == "left") {
                                         this@MainActivity.leftPanelOffset =
-                                            if (this@MainActivity.leftPanelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                            if (this@MainActivity.leftPanelOffset > leftPanelWidth.toPx() / 2) leftPanelWidth.toPx() else 0f
                                     } else if (activePanel == "right") {
                                         this@MainActivity.rightPanelOffset =
-                                            if (this@MainActivity.rightPanelOffset > panelWidth.toPx() / 2) panelWidth.toPx() else 0f
+                                            if (this@MainActivity.rightPanelOffset > rightPanelWidth.toPx() / 2) rightPanelWidth.toPx() else 0f
                                     }
 
                                     // Reset variables for the next gesture
@@ -335,8 +332,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                    }
-                ) {
+                    }) {
                     if (serviceBound) {
                         SurfaceGroup()
                     }
@@ -344,7 +340,7 @@ class MainActivity : ComponentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .width(panelWidth)
+                            .width(leftPanelWidth)
                             .offset(x = -animatedLeftPanelOffset) // Animate the x-axis offset
                             .background(Color.DarkGray)
                             .align(Alignment.CenterStart),
@@ -356,7 +352,7 @@ class MainActivity : ComponentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .width(panelWidth)
+                            .width(rightPanelWidth)
                             .offset(x = animatedRightPanelOffset) // Animate the x-axis offset
                             .background(Color.DarkGray)
                             .align(Alignment.CenterEnd),
@@ -371,19 +367,39 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun SurfaceGroup() {
-        // Using AndroidView to create a custom FrameLayout container
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                // Create a container FrameLayout to hold multiple SurfaceViews
-                FrameLayout(context)
-            },
-            update = { view ->
-                // Clear any previous views (in case of recomposition)
-                view.removeAllViews()
+        val density = LocalDensity.current.density.toInt()
 
-                // Create and add a SurfaceView for each surface in the surfaceList
-                mainService!!.surfaceList.forEach { surface ->
+        // Using AndroidView to create a custom FrameLayout container
+        AndroidView(modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                // Automatically resize the output to match the size of the SurfaceView
+                mainService!!.nativeLib.setDisplaySize(
+                    size.width, size.height, density
+                )
+            }, factory = { context ->
+            // Create a container FrameLayout to hold multiple SurfaceViews
+            FrameLayout(context)
+        }, update = { view ->
+            view.width
+            // Clear any previous views (in case of recomposition)
+            // Get a list of IDs currently in the surfaceList
+            val currentIds = mainService!!.surfaceList.map { it.id }.toSet()
+
+            // Remove views that are not in the surfaceList
+            val childrenToRemove = mutableListOf<View>()
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                if (child.id !in currentIds) {
+                    childrenToRemove.add(child)
+                }
+            }
+            childrenToRemove.forEach { view.removeView(it) }
+
+            // Create and add a SurfaceView for each surface in the surfaceList
+            mainService!!.surfaceList.forEach { surface ->
+                if (view.findViewById<SurfaceView>(surface.id) == null) {
+
                     val surfaceView = SurfaceView(view.context).apply {
                         // The wayland client will interact with this surface via this id
                         id = surface.id
@@ -395,13 +411,6 @@ class MainActivity : ComponentActivity() {
                             mainService!!.nativeLib.sendTouchEvent(surface.id, data)
                             performClick() // click and pointer events should be handled differently
                             true // Return true to indicate the event was handled
-                        }
-
-                        setOnKeyListener { v, keyCode, event ->
-                            // Send Wayland key event
-                            val data = keyboardEventToData(event)
-                            mainService!!.nativeLib.sendKeyboardEvent(surface.id, data)
-                            false // Consume the event
                         }
 
                         holder.addCallback(object : SurfaceHolder.Callback {
@@ -433,6 +442,14 @@ class MainActivity : ComponentActivity() {
                     view.addView(surfaceView, 0)
                 }
             }
-        )
+        })
+    }
+
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Send Wayland key event
+        val data = keyboardEventToData(event)
+        mainService!!.nativeLib.sendKeyboardEvent(data)
+        return true // Consume the event
     }
 }

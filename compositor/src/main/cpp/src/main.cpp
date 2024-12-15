@@ -61,6 +61,13 @@ Java_app_polarbear_compositor_NativeLib_start(JNIEnv *env, jobject thiz, jstring
 
 extern "C"
 JNIEXPORT void JNICALL
+Java_app_polarbear_compositor_NativeLib_setDisplaySize(JNIEnv *env, jobject thiz, jint width,
+                                                       jint height, jint scale) {
+    set_display_size((uint32_t) width, (uint32_t) height, (uint32_t) scale);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_setSurface(JNIEnv *env, jobject thiz, jint id,
                                                    jobject surface) {
     auto globalSurface = env->NewGlobalRef(surface);
@@ -76,6 +83,6 @@ Java_app_polarbear_compositor_NativeLib_sendTouchEvent(JNIEnv *env, jobject thiz
 extern "C"
 JNIEXPORT void JNICALL
 Java_app_polarbear_compositor_NativeLib_sendKeyboardEvent(JNIEnv *env, jobject thiz,
-                                                          jint surface_id, jobject event) {
-    handle_keyboard_event((uint32_t) surface_id, convertToKeyboardEventData(env, event));
+                                                          jobject event) {
+    handle_keyboard_event(convertToKeyboardEventData(env, event));
 }
